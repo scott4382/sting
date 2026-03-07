@@ -1,0 +1,1930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#1a1a1a" />
+  <title>LGU Sting Manager</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8f9fa; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef } = React;
+
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const HALF_DURATION = 25 * 60; // seconds
+const HALF_MINS     = 25;
+const FIELD_SIZE    = 7;
+const MAX_SUBS      = 4;       // max single-player subs per half
+const MAX_PRESENT   = 12;      // max players present
+
+const FORMATIONS = {
+  "1-2-3-1": { label: "1-2-3-1", slots: [
+    { id:"GK",   role:"GK",  row:0.87, col:0.50 },
+    { id:"DEF1", role:"DEF", row:0.65, col:0.22 },
+    { id:"DEF2", role:"DEF", row:0.65, col:0.78 },
+    { id:"MID1", role:"MID", row:0.42, col:0.18 },
+    { id:"MID2", role:"MID", row:0.40, col:0.50 },
+    { id:"MID3", role:"MID", row:0.42, col:0.82 },
+    { id:"FWD1", role:"FWD", row:0.16, col:0.50 },
+  ]},
+  "1-3-2-1": { label: "1-3-2-1", slots: [
+    { id:"GK",   role:"GK",  row:0.87, col:0.50 },
+    { id:"DEF1", role:"DEF", row:0.66, col:0.18 },
+    { id:"DEF2", role:"DEF", row:0.66, col:0.50 },
+    { id:"DEF3", role:"DEF", row:0.66, col:0.82 },
+    { id:"MID1", role:"MID", row:0.42, col:0.30 },
+    { id:"MID2", role:"MID", row:0.42, col:0.70 },
+    { id:"FWD1", role:"FWD", row:0.16, col:0.50 },
+  ]},
+  "1-2-2-2": { label: "1-2-2-2", slots: [
+    { id:"GK",   role:"GK",  row:0.87, col:0.50 },
+    { id:"DEF1", role:"DEF", row:0.67, col:0.27 },
+    { id:"DEF2", role:"DEF", row:0.67, col:0.73 },
+    { id:"MID1", role:"MID", row:0.46, col:0.30 },
+    { id:"MID2", role:"MID", row:0.46, col:0.70 },
+    { id:"FWD1", role:"FWD", row:0.18, col:0.33 },
+    { id:"FWD2", role:"FWD", row:0.18, col:0.67 },
+  ]},
+  "1-3-3-0": { label: "1-3-3-0", slots: [
+    { id:"GK",   role:"GK",  row:0.87, col:0.50 },
+    { id:"DEF1", role:"DEF", row:0.66, col:0.18 },
+    { id:"DEF2", role:"DEF", row:0.66, col:0.50 },
+    { id:"DEF3", role:"DEF", row:0.66, col:0.82 },
+    { id:"MID1", role:"MID", row:0.38, col:0.18 },
+    { id:"MID2", role:"MID", row:0.36, col:0.50 },
+    { id:"MID3", role:"MID", row:0.38, col:0.82 },
+  ]},
+};
+
+const ROLE_COLOR = { GK:"#b45309", DEF:"#1d4ed8", MID:"#d4a017", FWD:"#dc2626" };
+const ROLE_BG    = { GK:"#fef3c7", DEF:"#dbeafe", MID:"#fef3c7", FWD:"#fee2e2" };
+
+const LOGO_B64 = "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";
+
+
+function fmt(s) {
+  return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+}
+
+// Display label for a slot: strip trailing digits so "DEF1"→"DEF", "GK"→"GK"
+function slotLabel(slotId) {
+  return (slotId || "").replace(/\d+$/, "");
+}
+
+// ─── Rotation logic ───────────────────────────────────────────────────────────
+function prefOnly(p, role) { const pr = p.prefRoles || []; return pr.length > 0 && pr.includes(role); }
+function prefAny(p)         { return !p.prefRoles || p.prefRoles.length === 0; }
+
+/**
+ * Segment templates per squad size (N = total present, including GK).
+ *
+ * Each template is an array of segment-arrays, one per player, sorted by
+ * total minutes DESC (most minutes → assigned to player with least accumulated
+ * time, so playing time stays balanced across games).
+ *
+ * Design goals, in priority order:
+ *   1. GK plays the full half — always.
+ *   2. Zero outfield players play 25 min straight — unless N=7 (no bench, unavoidable).
+ *   3. Minimise the number of outfield players who play 25 min total.
+ *   4. No outfield player is on field for more than 15 consecutive minutes.
+ *   5. Playing time as equal as possible across the outfield.
+ *
+ * Every template has been mathematically verified: at each sub window {5,10,15,20}
+ * the number of players leaving the field equals the number entering, and exactly
+ * 7 players are on field at all times.
+ *
+ * Summary of unavoidable full-half outfield players per N:
+ *   N=7  → 6 full (no bench, nothing we can do)
+ *   N=8  → 3 full (1 bench player can only shuttle 3 rests)
+ *   N=9  → 2 full (2 bench = 4 rest slots, 2 left over)
+ *   N=10 → 1 full (3 bench = 6 rest slots but transition crunch at t=10 wastes 1)
+ *   N=11 → 0 full (4 bench = exactly enough to rest all 6 outfield)
+ *   N=12 → 0 full (5 bench = all rested, extra bench gets a late cameo)
+ */
+const HALF_TEMPLATES = {
+  7: [
+    [[0,25]],                    // GK — full
+    [[0,25]],[[0,25]],[[0,25]], // outfield — all full (unavoidable)
+    [[0,25]],[[0,25]],[[0,25]],
+  ],
+  8: [
+    [[0,25]],                    // GK — full
+    [[0,10],[15,25]],            // rest 10-15  (20 min, max consec 10) ✓
+    [[0,5],[10,25]],             // rest  5-10  (20 min, max consec 15) ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, max consec 15) ✓
+    [[5,20]],                    // bench shuttle on 5-20 (15 min)      ✓
+    [[0,25]],[[0,25]],[[0,25]], // 3 unavoidable full outfield          ✗
+  ],
+  9: [
+    [[0,25]],                    // GK — full
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,25]],[[0,25]],          // 2 unavoidable full outfield          ✗
+    [[5,10],[15,20]],            // bench shuttle (10 min, consec 5)    ✓
+    [[5,10],[15,20]],            // bench shuttle (10 min, consec 5)    ✓
+  ],
+  10: [
+    [[0,25]],                    // GK — full
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,10],[15,25]],            // rest 10-15  (20 min, consec 10)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,25]],                    // 1 unavoidable full outfield          ✗
+    [[5,10],[15,20]],            // bench shuttle A (10 min, consec 5)  ✓
+    [[5,10],[15,20]],            // bench shuttle B (10 min, consec 5)  ✓
+    [[10,15]],                   // bench single   ( 5 min, consec 5)  ✓
+  ],
+  11: [
+    [[0,25]],                    // GK — full
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,10],[15,25]],            // rest 10-15  (20 min, consec 10)     ✓
+    [[0,10],[15,25]],            // rest 10-15  (20 min, consec 10)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[5,10],[15,20]],            // bench shuttle A (10 min, consec 5)  ✓
+    [[5,10],[15,20]],            // bench shuttle B (10 min, consec 5)  ✓
+    [[10,15]],                   // bench single A  ( 5 min, consec 5)  ✓
+    [[10,15]],                   // bench single B  ( 5 min, consec 5)  ✓
+  ],
+  12: [
+    [[0,25]],                    // GK — full
+    [[0,5],[10,25]],             // rest  5-10  (20 min, consec 15)     ✓
+    [[0,10],[15,25]],            // rest 10-15  (20 min, consec 10)     ✓
+    [[0,10],[15,25]],            // rest 10-15  (20 min, consec 10)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,15],[20,25]],            // rest 15-20  (20 min, consec 15)     ✓
+    [[0,5],[10,20]],             // rest 5-10 + early exit (15 min)     ✓
+    [[5,10],[15,20]],            // bench shuttle A (10 min, consec 5)  ✓
+    [[5,10],[15,20]],            // bench shuttle B (10 min, consec 5)  ✓
+    [[10,15]],                   // bench single A  ( 5 min, consec 5)  ✓
+    [[10,15]],                   // bench single B  ( 5 min, consec 5)  ✓
+    [[20,25]],                   // bench late entry ( 5 min, consec 5) ✓
+  ],
+};
+
+/** Returns sub info for display purposes (game-plan summary banner). */
+function getSubInfo(N) {
+  const tmpl = HALF_TEMPLATES[N] || HALF_TEMPLATES[7];
+  const windows = [5, 10, 15, 20];
+  const counts = {};
+  for (const segs of tmpl) {
+    for (const [a, b] of segs) {
+      if (windows.includes(a)) counts[a] = (counts[a] || 0) + 1;
+    }
+  }
+  const total = Object.values(counts).reduce((s, v) => s + v, 0);
+  const desc  = windows.filter(w => counts[w]).map(w => counts[w] > 1 ? `${w}′×${counts[w]}` : `${w}′`).join(", ");
+  return { total, desc };
+}
+
+/** Total minutes in a segment list */
+function segMins(segs)   { return segs.reduce((s, [a, b]) => s + b - a, 0); }
+/** Max consecutive minutes in a segment list */
+function segMaxC(segs)   { return Math.max(...segs.map(([a, b]) => b - a)); }
+/** True if player is on field at minute t (open interval: [a,b) means on during [a, b) ) */
+function onAt(segs, t)   { return segs.some(([a, b]) => a <= t && t < b); }
+
+/**
+ * Build the complete half plan — lineup + sub schedule.
+ *
+ * Algorithm:
+ *   1. Look up the segment template for N players.
+ *   2. Sort templates by total minutes DESC (ties broken by max-consecutive ASC).
+ *   3. Sort players by accumulated time ASC. Assign: most-minutes template → least-time player.
+ *   4. Enforce GK swap: the designated GK player must get the GK (full-half) template.
+ *   5. Assign field positions by player preference.
+ *   6. Derive the sub schedule from segment boundaries: at each window t,
+ *      players whose segment ends at t go OFF, players whose segment starts at t come ON.
+ */
+function buildHalfPlan(present, formation, gameSec = {}, prevGkId = null, seed = 0) {
+  const N = present.length;
+
+  // ── Step 1: load and sort segment templates ──────────────────────────────
+  const rawTemplates = HALF_TEMPLATES[N] || HALF_TEMPLATES[7];
+
+  // Seeded LCG random — deterministic per seed, different across seeds
+  let rng = (seed * 1664525 + 1013904223) & 0xffffffff;
+  const rand = () => { rng = (rng * 1664525 + 1013904223) & 0xffffffff; return (rng >>> 0) / 0xffffffff; };
+
+  // Sort: most playing time first; ties → shorter max consecutive.
+  // Within same-duration groups, shuffle by seed so reshuffling redistributes
+  // playing time across different players each time.
+  const withRand = rawTemplates.map((t, i) => ({ t, mins: segMins(t), maxC: segMaxC(t), r: rand() }));
+  withRand.sort((a, b) => b.mins - a.mins || a.maxC - b.maxC || a.r - b.r);
+  const templates = withRand.map(x => x.t);
+
+  // ── Step 2: sort players by accumulated time, ascending ──────────────────
+  // Within equal-time groups, use a seeded shuffle so regeneration gives variety.
+  const totalSec = p => (p.totalTime || 0) + (gameSec[p.id] || 0);
+  const sorted = [...present].sort((a, b) => {
+    const diff = totalSec(a) - totalSec(b);
+    if (diff !== 0) return diff;
+    return rand() - 0.5;  // random tiebreak → regeneration yields variety
+  });
+
+  // ── Step 3: pair players with templates (most minutes → least-time player)
+  const assignments = sorted.map((p, i) => ({ p, segs: templates[i] }));
+
+  // ── Step 4: enforce GK assignment ────────────────────────────────────────
+  // The GK template is always [[0,25]] (index 0 after sort).
+  // Find the best GK candidate and swap them into position 0.
+  const gkCandidates = present.filter(p => prefOnly(p, "GK"));
+  const nonPrev      = (arr) => arr.filter(p => p.id !== prevGkId);
+
+  let gkPlayer;
+  if (gkCandidates.length > 0) {
+    // Dedicated GK players: prefer the one who didn't play GK last half, then least time
+    const pool = nonPrev(gkCandidates).length > 0 ? nonPrev(gkCandidates) : gkCandidates;
+    pool.sort((a, b) => {
+      const diff = totalSec(a) - totalSec(b);
+      if (diff !== 0) return diff;
+      return rand() - 0.5;
+    });
+    gkPlayer = pool[0];
+  } else {
+    // No dedicated GK — rotate by posHistory: pick the player who has played GK LEAST
+    // (excluding the previous half's GK so someone else always gets a turn)
+    const pool = nonPrev(sorted).length > 0 ? nonPrev(sorted) : sorted;
+    const gkHist = p => (p.posHistory || {}).GK || 0;
+    const poolSorted = [...pool].sort((a, b) => {
+      const histDiff = gkHist(a) - gkHist(b);
+      if (histDiff !== 0) return histDiff;
+      const timeDiff = totalSec(a) - totalSec(b);
+      if (timeDiff !== 0) return timeDiff;
+      return rand() - 0.5;
+    });
+    gkPlayer = poolSorted[0];
+  }
+
+  // Swap only the player into slot 0, keeping each slot's segs intact.
+  // (Swapping the whole object would give the GK a bench template — bug.)
+  const gkAssignIdx = assignments.findIndex(a => a.p.id === gkPlayer.id);
+  if (gkAssignIdx !== 0) {
+    const tmp = assignments[0].p;
+    assignments[0].p = assignments[gkAssignIdx].p;
+    assignments[gkAssignIdx].p = tmp;
+  }
+
+  // ── Step 5: assign field positions using position-history rotation ───────
+  // Starters = players whose first segment starts at 0
+  const onFieldIds  = assignments.filter(a => a.segs[0][0] === 0).map(a => a.p.id);
+  const offFieldIds = assignments.filter(a => a.segs[0][0] > 0).map(a => a.p.id);
+
+  const fmtSlots = formation.slots;
+  const pm       = {};  // slotId -> pid
+  const used     = new Set();
+
+  // Score a candidate for a given role:
+  //   Lower score = stronger candidate (want to minimise role count for that role)
+  //   1st: saturation = times_played / slots_of_this_role_in_formation (normalises GK vs MID)
+  //   2nd: preference match (prefers this role = 0, any = 1, wrong = 2, strict GK elsewhere = 3)
+  //   3rd: total playing time (least = bonus)
+  //   4th: seeded random tiebreak for game-to-game variety
+  const posHist = p => p.posHistory || {};
+  const slotCountFor = role => fmtSlots.filter(s => s.role === role).length || 1;
+  const roleScore = (p, role) => {
+    const saturation = (posHist(p)[role] || 0) / slotCountFor(role);
+    let prefScore;
+    if (prefOnly(p, role))                             prefScore = 0;  // wants this role
+    else if (prefAny(p))                               prefScore = 1;  // flexible
+    else if (!prefOnly(p, role) && !prefOnly(p, "GK")) prefScore = 2;  // has prefs, not this role
+    else                                               prefScore = 3;  // strict GK, wrong role
+    return [saturation, prefScore, totalSec(p), rand()];
+  };
+  const compareTuples = (a, b) => {
+    for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] - b[i]; }
+    return 0;
+  };
+  const pickFor = (slotRole, candidateIds) => {
+    const cands = candidateIds.map(id => present.find(p => p.id === id)).filter(Boolean).filter(p => !used.has(p.id));
+    if (cands.length === 0) return null;
+    cands.sort((a, b) => compareTuples(roleScore(a, slotRole), roleScore(b, slotRole)));
+    return cands[0];
+  };
+
+  const gkSlot = fmtSlots.find(s => s.role === "GK");
+  if (gkSlot) { pm[gkSlot.id] = gkPlayer.id; used.add(gkPlayer.id); }
+
+  const fieldCandidates = onFieldIds.filter(id => !used.has(id));
+  for (const role of ["DEF", "MID", "FWD"]) {
+    for (const slot of fmtSlots.filter(s => s.role === role)) {
+      const pick = pickFor(role, fieldCandidates.filter(id => !used.has(id)));
+      if (pick) { pm[slot.id] = pick.id; used.add(pick.id); }
+    }
+  }
+
+  // pid -> slotId (starters only; incoming subs inherit the slot they fill)
+  const posMap = {};
+  Object.entries(pm).forEach(([slotId, pid]) => { posMap[pid] = slotId; });
+
+  // ── Step 6: derive substitution schedule from segment boundaries ──────────
+  // At each window t:
+  //   players going OFF  = those with a segment ending at t
+  //   players coming ON  = those with a segment starting at t
+  // The slot an incoming player fills = the slot vacated by the outgoing player.
+  const subs = [];
+  for (const t of [5, 10, 15, 20]) {
+    const goingOff = assignments.filter(a => a.segs.some(([, b]) => b === t));
+    const comingOn = assignments.filter(a => a.segs.some(([start]) => start === t));
+
+    // Track slot availability as off-players free their slots
+    const freeSlots = goingOff.map(a => {
+      // The current slot of this player: either their original slot (from posMap)
+      // or inherited from a prior sub (we'll look it up from the running posMap).
+      return posMap[a.p.id] ?? null;
+    });
+
+    comingOn.forEach((onAss, i) => {
+      const offAss = goingOff[i];
+      if (!offAss) return;
+      const slot = freeSlots[i];
+      subs.push({ minute: t, outId: offAss.p.id, inId: onAss.p.id, slot });
+      // Update posMap so later windows inherit the right slot
+      if (slot) { delete posMap[offAss.p.id]; posMap[onAss.p.id] = slot; }
+    });
+  }
+
+  subs.sort((a, b) => a.minute - b.minute);
+
+  // pm was mutated during step 6 to track running slot assignments.
+  // Rebuild posMap (pid->slotId) from final pm state (slotId->pid).
+  const finalPosMap = {};
+  Object.entries(pm).forEach(([slotId, pid]) => { finalPosMap[pid] = slotId; });
+  return { posMap: finalPosMap, starters: onFieldIds, bench: offFieldIds, subs };
+}
+
+// ─── Full game simulation ─────────────────────────────────────────────────────
+function simulateFullGame(present, formation, seed = 0) {
+  const intervals    = []; // {pid, half, startMin, endMin, slot}
+  const halfSubs     = { 1: [], 2: [] };
+  let   prevGkId     = null;
+  let   extraSecGame = {}; // seconds accrued this game so far
+
+  for (const half of [1, 2]) {
+    // Use seed for H1, seed+1 for H2 so both halves vary on reshuffle
+    const halfSeed = seed + (half - 1);
+    const { posMap: pm, starters, bench, subs } = buildHalfPlan(present, formation, extraSecGame, prevGkId, halfSeed);
+    halfSubs[half] = subs;
+    // Track GK for mandatory halftime swap — pm is pid→slotId, so find pid where value === gkSlot.id
+    const gkSlot = formation.slots.find(s => s.role === "GK");
+    prevGkId = gkSlot ? Number(Object.entries(pm).find(([, slotId]) => slotId === gkSlot.id)?.[0]) : null;
+
+    // Walk through the half and build intervals
+    let currentField   = [...starters];
+    let currentPosMap  = { ...pm };
+    let lastMinute     = 0;
+
+    const flush = (until) => {
+      if (until <= lastMinute) return;
+      currentField.forEach(pid => {
+        const slot = currentPosMap[pid];
+        if (slot !== undefined) {
+          intervals.push({ pid, half, startMin: lastMinute, endMin: until, slot });
+        }
+      });
+    };
+
+    for (const sub of subs) {
+      flush(sub.minute);
+      lastMinute = sub.minute;
+      currentField = currentField.map(id => id === sub.outId ? sub.inId : id);
+      const newPM = { ...currentPosMap };
+      delete newPM[sub.outId];
+      newPM[sub.inId] = sub.slot;   // incoming player takes their pre-assigned slot
+      currentPosMap = newPM;
+    }
+    flush(HALF_MINS);
+
+    // Accumulate this-half time into extraSecGame for H2 planning
+    present.forEach(p => {
+      const mins = intervals
+        .filter(iv => iv.pid === p.id && iv.half === half)
+        .reduce((s, iv) => s + (iv.endMin - iv.startMin), 0);
+      extraSecGame[p.id] = (extraSecGame[p.id] || 0) + mins * 60;
+    });
+  }
+
+  const playerMins = {};
+  present.forEach(p => {
+    playerMins[p.id] = intervals
+      .filter(iv => iv.pid === p.id)
+      .reduce((s, iv) => s + (iv.endMin - iv.startMin), 0);
+  });
+
+  return {
+    intervals,
+    playerMins,
+    allSubs: [
+      ...halfSubs[1].map(s => ({ ...s, half: 1 })),
+      ...halfSubs[2].map(s => ({ ...s, half: 2 })),
+    ],
+    h1Subs: halfSubs[1],
+    h2Subs: halfSubs[2],
+  };
+}
+
+// ─── Field SVG ────────────────────────────────────────────────────────────────
+function Field({ formation, posMap, players, sessionTime, onTapPlayer, tapSubOut }) {
+  const W = 300, H = 410;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 300, display: "block", margin: "0 auto" }}>
+      <defs>
+        <linearGradient id="turf" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#16a34a" stopOpacity="0.28" />
+        </linearGradient>
+      </defs>
+      <rect x={6} y={6} width={W - 12} height={H - 12} rx={8} fill="url(#turf)" stroke="#d4a017" strokeWidth={1.5} />
+      {[0,1,2,3,4,5].map(i => (
+        <rect key={i} x={6} y={6 + i*(H-12)/6} width={W-12} height={(H-12)/12} fill="rgba(255,255,255,0.12)" />
+      ))}
+      <line x1={6} y1={H/2} x2={W-6} y2={H/2} stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4 4" />
+      <circle cx={W/2} cy={H/2} r={32} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4 4" />
+      <circle cx={W/2} cy={H/2} r={2.5} fill="rgba(255,255,255,0.7)" />
+      <rect x={W/2-42} y={9}     width={84} height={28} rx={2} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={1} />
+      <rect x={W/2-42} y={H-37}  width={84} height={28} rx={2} fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={1} />
+      {formation.slots.map(slot => {
+        const pid    = Object.entries(posMap).find(([, v]) => v === slot.id)?.[0];
+        const player = pid ? players.find(p => String(p.id) === String(pid)) : null;
+        const cx     = slot.col * (W - 12) + 6;
+        const cy     = slot.row * (H - 12) + 6;
+        const rc     = ROLE_COLOR[slot.role];
+        const secs   = pid && sessionTime ? (sessionTime[Number(pid)] || 0) : 0;
+        const isGK   = slot.role === "GK";
+        const isTapped = tapSubOut && String(tapSubOut) === String(pid);
+        const isClickable = onTapPlayer && pid && !isGK;
+        return (
+          <g key={slot.id} onClick={isClickable ? () => onTapPlayer(Number(pid)) : undefined} style={{ cursor: isClickable ? "pointer" : "default" }}>
+            <circle cx={cx} cy={cy + 2.5} r={19} fill="rgba(0,0,0,0.12)" />
+            <circle cx={cx} cy={cy} r={19} fill={isTapped ? "#fef2f2" : "white"} stroke={isTapped ? "#dc2626" : rc} strokeWidth={isTapped ? 3 : 2.5} />
+            {player ? (
+              <>
+                <text x={cx} y={cy - 2}   textAnchor="middle" fill={isTapped ? "#dc2626" : rc} fontSize={11} fontWeight="700" fontFamily="'DM Sans',sans-serif">{player.number || "?"}</text>
+                <text x={cx} y={cy + 8.5} textAnchor="middle" fill="#374151" fontSize={6.5} fontFamily="'DM Sans',sans-serif">{player.name.split(" ")[0].toUpperCase().substring(0, 7)}</text>
+              </>
+            ) : (
+              <text x={cx} y={cy + 4} textAnchor="middle" fill="#9ca3af" fontSize={8} fontFamily="sans-serif">–</text>
+            )}
+            <rect x={cx + 11} y={cy - 28} width={26} height={13} rx={4} fill={isTapped ? "#dc2626" : rc} />
+            <text x={cx + 24} y={cy - 18} textAnchor="middle" fill="white" fontSize={7.5} fontWeight="600" fontFamily="'DM Sans',sans-serif">{slot.role}</text>
+            {sessionTime && secs > 0 && (
+              <text x={cx} y={cy + 29} textAnchor="middle" fill={rc} fontSize={7} fontWeight="600" fontFamily="'DM Sans',sans-serif">{fmt(secs)}</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ─── Sub Schedule Table ───────────────────────────────────────────────────────
+function SubTable({ schedule, completed, players, formation }) {
+  const getName = id => {
+    const p = players.find(p => p.id === id || p.id === Number(id));
+    return p ? `${p.number ? "#" + p.number + " " : ""}${p.name}` : "?";
+  };
+  if (!schedule.length) return (
+    <p style={{ fontSize: 13, color: "#9ca3af", padding: "10px 0", fontStyle: "italic" }}>
+      No substitutions needed — all players on field.
+    </p>
+  );
+  const nextIdx = schedule.findIndex(s =>
+    !completed.some(c => c.minute === s.minute && c.outId === s.outId)
+  );
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: "#f9fafb" }}>
+            {["Min", "Slot", "Coming Off", "Coming On", ""].map((h, i) => (
+              <th key={i} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {schedule.map((s, i) => {
+            const done   = completed.some(c => c.minute === s.minute && c.outId === s.outId);
+            const isNext = i === nextIdx;
+            const slotDef = formation.slots.find(sl => sl.id === s.slot);
+            const rc = slotDef ? ROLE_COLOR[slotDef.role] : "#d4a017";
+            const bg = slotDef ? ROLE_BG[slotDef.role]   : "#fef3c7";
+            return (
+              <tr key={i} style={{ borderTop: "1px solid #f3f4f6", background: isNext ? "#fffbeb" : done ? "#fafafa" : "white", opacity: done ? 0.45 : 1 }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, fontSize: 16, color: isNext ? "#d4a017" : done ? "#9ca3af" : "#111827", lineHeight: 1, fontFamily: "'DM Mono',monospace" }}>{s.minute}′</td>
+                <td style={{ padding: "10px 12px" }}>
+                  {slotDef && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: rc, background: bg }}>{slotLabel(s.slot)}</span>}
+                </td>
+                <td style={{ padding: "10px 12px", color: done ? "#9ca3af" : "#dc2626", fontWeight: done ? 400 : 600, fontSize: 13 }}>{getName(s.outId)}</td>
+                <td style={{ padding: "10px 12px", color: done ? "#9ca3af" : "#16a34a", fontWeight: done ? 400 : 600, fontSize: 13 }}>{getName(s.inId)}</td>
+                <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                  {done
+                    ? <span style={{ color: "#d4a017", fontSize: 16 }}>✓</span>
+                    : isNext
+                    ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: "#92400e", background: "#fef3c7" }}>NEXT</span>
+                    : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── UI primitives ────────────────────────────────────────────────────────────
+const Card = ({ children, style = {} }) => (
+  <div style={{ background: "white", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", ...style }}>
+    {children}
+  </div>
+);
+const SectionLabel = ({ children, color = "#6b7280", style = {} }) => (
+  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color, marginBottom: 10, ...style }}>{children}</p>
+);
+const RoleChip = ({ role }) => (
+  <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: ROLE_COLOR[role], background: ROLE_BG[role] }}>{role}</span>
+);
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [view, setView] = useState("roster");
+
+  const DEFAULT_PLAYERS = [
+    "Oliver","Matthew","Taqin","Roman","Jacob","Ouri",
+    "Cayden","Ayaan","Vihaan","Adrian","Jaxon","Om",
+  ].map((name, i) => ({ id: i + 1, name, number: "", prefRoles: [], totalTime: 0, games: 0, present: true, posHistory: { GK: 0, DEF: 0, MID: 0, FWD: 0 } }));
+
+  const [players,  setPlayers]  = useState(() => {
+    try {
+      const saved = localStorage.getItem("sqb6_players");
+      const parsed = saved ? JSON.parse(saved) : null;
+      // Backfill missing fields (migration)
+      if (parsed && parsed.length > 0) return parsed.map(p => ({
+        present: true,
+        ...p,
+        posHistory: { GK: 0, DEF: 0, MID: 0, FWD: 0, ...(p.posHistory || {}) },
+      }));
+      return DEFAULT_PLAYERS;
+    } catch { return DEFAULT_PLAYERS; }
+  });
+  const [formKey, setFormKey] = useState(() => localStorage.getItem("sqb6_form") || "1-2-3-1");
+  const [newName,   setNewName]   = useState("");
+  const [newNumber, setNewNumber] = useState("");
+  const [editId,    setEditId]    = useState(null);
+
+  // Game state
+  const [gameActive,    setGameActive]    = useState(false);
+  const [paused,        setPaused]        = useState(false);
+  const [half,          setHalf]          = useState(1);
+  const [elapsed,       setElapsed]       = useState(0);
+  const [halftime,      setHalftime]      = useState(false);
+  const [gameOver,      setGameOver]      = useState(false);
+  const [onField,       setOnField]       = useState([]);
+  const [onBench,       setOnBench]       = useState([]);
+  const [posMap,        setPosMap]        = useState({});
+  const [subSchedule,   setSubSchedule]   = useState([]);
+  const [completedSubs, setCompletedSubs] = useState([]);
+  const [savedPlan,     setSavedPlan]     = useState(null); // { h1Plan, h2Plan, h1Subs, h2Subs, seed, formation }
+  const [games,         setGames]         = useState(() => { try { return JSON.parse(localStorage.getItem("sqb6_games") || "[]"); } catch { return []; } });
+  const [activeGameId,  setActiveGameId]  = useState(null); // uid of game whose lineup we're editing
+  const [calStatus,     setCalStatus]     = useState("idle"); // idle | loading | ok | error
+  const [sessionTime,   setSessionTime]   = useState({});
+  const [gameLog,       setGameLog]       = useState([]);
+  const [preview,       setPreview]       = useState(null);
+  const [h1GkId,        setH1GkId]        = useState(null);
+  const [manOut,        setManOut]        = useState("");
+  const [manIn,         setManIn]         = useState("");
+  const [gamePlanSeed,  setGamePlanSeed]  = useState(1);
+  const [ourScore,      setOurScore]      = useState(0);
+  const [theirScore,    setTheirScore]    = useState(0);
+  const [rosterSort,    setRosterSort]    = useState("name"); // "name" | "number"
+  const [showExport,    setShowExport]    = useState(false);
+  const [importText,    setImportText]    = useState("");
+  const [showImport,    setShowImport]    = useState(false);
+  const [tapSubOut,     setTapSubOut]     = useState(null); // pid tapped to sub out on field
+
+  const timerRef   = useRef(null);
+  const sessionRef = useRef({});
+  const fieldRef   = useRef([]);
+  const posRef     = useRef({});
+  // slotLogRef: accumulates { pid, role } pairs for the current half, committed at halftime/fulltime
+  const slotLogRef = useRef([]);
+
+  useEffect(() => { try { localStorage.setItem("sqb6_players", JSON.stringify(players)); } catch {} }, [players]);
+  useEffect(() => { localStorage.setItem("sqb6_form", formKey); }, [formKey]);
+  useEffect(() => { try { localStorage.setItem("sqb6_games", JSON.stringify(games)); } catch {} }, [games]);
+  useEffect(() => { fieldRef.current = onField; }, [onField]);
+  useEffect(() => { posRef.current   = posMap;  }, [posMap]);
+
+  const formation = FORMATIONS[formKey];
+  const present   = players.filter(p => p.present);
+  const getPlayer = id => players.find(p => p.id === id || p.id === Number(id));
+  const getName   = id => { const p = getPlayer(id); return p ? `${p.number ? "#" + p.number + " " : ""}${p.name}` : "?"; };
+
+  // Roster ops
+  const addPlayer    = () => {
+    if (!newName.trim()) return;
+    setPlayers(ps => [...ps, { id: Date.now(), name: newName.trim(), number: newNumber.trim(), prefRoles: [], totalTime: 0, games: 0, present: true, posHistory: { GK: 0, DEF: 0, MID: 0, FWD: 0 } }]);
+    setNewName(""); setNewNumber("");
+  };
+  const updatePlayer = (id, changes) => setPlayers(ps => ps.map(p => p.id === id ? { ...p, ...changes } : p));
+  const removePlayer = id => setPlayers(ps => ps.filter(p => p.id !== id));
+  const togglePresent = id => updatePlayer(id, { present: !players.find(p => p.id === id)?.present });
+
+  // ── Build one half's lineup + sub schedule ───────────────────────────────
+  const buildAll = (extraSecGame = {}, prevGkId = null, seed = 0) => {
+    return buildHalfPlan(present, formation, extraSecGame, prevGkId, seed);
+  };
+
+  const doPreview = (seed = Date.now()) => { setPreview(buildAll({}, null, seed)); setView("lineup"); };
+
+  // ── Commit position history for the half just completed ───────────────────
+  // posMap: { pid -> slotId }  formation.slots: [{ id, role }]
+  // We build a { pid -> role } map from the actual posMap at end of half, then
+  // also fold in any slots held during the half via completedSubs.
+  // Simplest accurate approach: derive from slotLog accumulated during the half.
+  const commitPosHistory = (log) => {
+    // log = [{ pid, role }] — one entry per slot-stint this half
+    // Deduplicate: count each unique (pid, role) pair once per half
+    const seen = new Set();
+    const delta = {}; // pid -> { role: count }
+    log.forEach(({ pid, role }) => {
+      const key = `${pid}:${role}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (!delta[pid]) delta[pid] = {};
+      delta[pid][role] = (delta[pid][role] || 0) + 1;
+    });
+    setPlayers(ps => ps.map(p => {
+      if (!delta[p.id]) return p;
+      const ph = { GK: 0, DEF: 0, MID: 0, FWD: 0, ...(p.posHistory || {}) };
+      Object.entries(delta[p.id]).forEach(([role, n]) => { ph[role] = (ph[role] || 0) + n; });
+      return { ...p, posHistory: ph };
+    }));
+  };
+
+  // ── Build slotLog from a posMap + formation (starting 11) ───────────────────
+  const buildSlotLog = (pm, fmtSlots) => {
+    const log = [];
+    Object.entries(pm).forEach(([pid, slotId]) => {
+      const slot = fmtSlots.find(s => s.id === slotId);
+      if (slot) log.push({ pid: Number(pid) || pid, role: slot.role });
+    });
+    return log;
+  };
+
+  // ── Start game ────────────────────────────────────────────────────────────
+  const startGame = (usePreview = false, plan = null) => {
+    const { posMap: pm, starters, bench, subs } = plan
+      ? { posMap: plan.h1Plan.posMap, starters: plan.h1Plan.starters, bench: plan.h1Plan.bench, subs: plan.h1Subs }
+      : (usePreview && preview) ? preview : buildAll();
+    setOnField(starters); setOnBench(bench);
+    setPosMap(pm); setSubSchedule(subs);
+    setCompletedSubs([]); setElapsed(0);
+    setHalf(1); setHalftime(false); setGameOver(false); setGameActive(true); setPaused(false);
+    setSessionTime({}); sessionRef.current = {};
+    slotLogRef.current = buildSlotLog(pm, formation.slots);
+    const gkSlot = formation.slots.find(s => s.role === "GK");
+    const gkId   = gkSlot ? Object.entries(pm).find(([sid]) => sid === gkSlot.id)?.[1] : null;
+    setH1GkId(gkId ? Number(gkId) : null);
+    setGameLog([`⚽ Kick off! ${formation.label} · ${present.length} players`]);
+    alertedSubRef.current = new Set();
+    setOurScore(0); setTheirScore(0);
+    setPreview(null); setView("game");
+  };
+
+  // ── Timer ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!gameActive || halftime || gameOver || paused) { clearInterval(timerRef.current); return; }
+    timerRef.current = setInterval(() => {
+      setElapsed(e => {
+        const next = e + 1;
+        if (next >= HALF_DURATION) {
+          clearInterval(timerRef.current);
+          if (half === 1) {
+            setHalftime(true);
+            setGameLog(l => [...l, "⏸ Halftime!"]);
+            commitPosHistory(slotLogRef.current);
+            slotLogRef.current = [];
+          } else {
+            setGameOver(true); setGameActive(false);
+            setGameLog(l => [...l, "🏁 Full time!"]);
+            commitPosHistory(slotLogRef.current);
+            slotLogRef.current = [];
+            setPlayers(ps => ps.map(p => ({
+              ...p,
+              totalTime: (p.totalTime || 0) + (sessionRef.current[p.id] || 0),
+              games:     (p.games     || 0) + (sessionRef.current[p.id] > 0 ? 1 : 0),
+            })));
+          }
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [gameActive, halftime, gameOver, half, paused]);
+
+  // ── Per-second tick: track time + trigger auto subs ───────────────────────
+  useEffect(() => {
+    if (!gameActive || halftime || gameOver || paused) return;
+    fieldRef.current.forEach(id => { sessionRef.current[id] = (sessionRef.current[id] || 0) + 1; });
+    setSessionTime({ ...sessionRef.current });
+    const minute  = Math.floor(elapsed / 60);
+    const pending = subSchedule.filter(s =>
+      s.minute <= minute && !completedSubs.some(c => c.minute === s.minute && c.outId === s.outId)
+    );
+    if (pending.length) {
+      pending.forEach(sub => {
+        setOnField(f => f.map(id => id === sub.outId ? sub.inId : id));
+        setOnBench(b => b.map(id => id === sub.inId  ? sub.outId : id));
+        setPosMap(pm => { const u = { ...pm }; delete u[sub.outId]; u[sub.inId] = sub.slot; return u; });
+        setGameLog(l => [...l, `🔄 ${getName(sub.inId)} on for ${getName(sub.outId)} @ ${sub.slot} (${sub.minute}′)`]);
+        setCompletedSubs(c => [...c, sub]);
+        // Record the incoming player's position in the slot log
+        const slotDef = formation.slots.find(s => s.id === sub.slot);
+        if (slotDef) slotLogRef.current.push({ pid: sub.inId, role: slotDef.role });
+      });
+    }
+  }, [elapsed]);
+
+  // ── Sub alert: vibrate + beep when a sub is imminent (within 10s) ─────────
+  const alertedSubRef = useRef(new Set());
+  useEffect(() => {
+    if (!gameActive || paused || halftime || gameOver) return;
+    const upcoming = subSchedule.find(s =>
+      !completedSubs.some(c => c.minute === s.minute && c.outId === s.outId) &&
+      !alertedSubRef.current.has(`${s.minute}:${s.outId}`)
+    );
+    if (!upcoming) return;
+    const secsLeft = upcoming.minute * 60 - elapsed;
+    if (secsLeft <= 10 && secsLeft >= 0) {
+      alertedSubRef.current.add(`${upcoming.minute}:${upcoming.outId}`);
+      // Vibrate if supported
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      // Audio beep
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [0, 0.25].forEach(t => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = 880; gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.18);
+          osc.start(ctx.currentTime + t); osc.stop(ctx.currentTime + t + 0.2);
+        });
+      } catch {}
+    }
+  }, [elapsed, gameActive, paused, halftime, gameOver, subSchedule, completedSubs]);
+
+
+  const startH2 = () => {
+    const { posMap: pm, starters, bench, subs } = buildAll(sessionRef.current, h1GkId);
+    setOnField(starters); setOnBench(bench);
+    setPosMap(pm); setSubSchedule(subs);
+    alertedSubRef.current = new Set();
+    setCompletedSubs([]); setElapsed(0); setHalf(2); setHalftime(false); setPaused(false);
+    slotLogRef.current = buildSlotLog(pm, formation.slots);
+    setGameLog(l => [...l, "⚽ Second half!"]);
+  };
+
+  // ── Manual sub ─────────────────────────────────────────────────────────────
+  const doManualSub = () => {
+    const outId = Number(manOut) || manOut;
+    const inId  = Number(manIn)  || manIn;
+    if (!outId || !inId) return;
+    const slot = posRef.current[outId];
+    setOnField(f => f.map(id => id === outId ? inId  : id));
+    setOnBench(b => b.map(id => id === inId  ? outId : id));
+    setPosMap(pm => { const u = { ...pm }; delete u[outId]; u[inId] = slot; return u; });
+    setGameLog(l => [...l, `🔄 ${getName(inId)} on for ${getName(outId)} @ ${slot || "?"} (${Math.floor(elapsed / 60)}′ manual)`]);
+    const slotDef = slot ? formation.slots.find(s => s.id === slot) : null;
+    if (slotDef) slotLogRef.current.push({ pid: inId, role: slotDef.role });
+    setManOut(""); setManIn("");
+  };
+
+  const minute  = Math.floor(elapsed / 60);
+  const pct     = Math.min((elapsed / HALF_DURATION) * 100, 100);
+  const hasGame = gameActive || halftime || gameOver;
+  const nextSub = subSchedule.find(s => !completedSubs.some(c => c.minute === s.minute && c.outId === s.outId));
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: "100vh", background: "#f8f9fa", fontFamily: "'DM Sans',sans-serif", color: "#111827" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px}
+        button{cursor:pointer;font-family:'DM Sans',sans-serif}
+        button:active{transform:scale(0.97)}
+        input,select{outline:none;font-family:'DM Sans',sans-serif}
+        select option{background:white}
+        .fade{animation:fi .18s ease}
+        @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        .pulse{animation:pu 1.4s ease-in-out infinite}
+        @keyframes pu{0%,100%{opacity:1}50%{opacity:0.2}}
+        .tab{background:none;border:none;border-bottom:2px solid transparent;color:#9ca3af;
+          padding:12px 14px;font-size:13px;font-weight:600;letter-spacing:0.04em;
+          text-transform:uppercase;transition:color .15s,border-color .15s;white-space:nowrap}
+        .tab:hover{color:#ffffff}
+        .tab.on{border-bottom-color:#d4a017;color:#d4a017}
+        .btn-primary{background:#d4a017;border:none;border-radius:8px;color:white;
+          padding:11px 20px;font-size:14px;font-weight:600;transition:background .15s}
+        .btn-primary:hover{background:#b8860d}
+        .btn-ghost{background:white;border:1.5px solid #e5e7eb;border-radius:8px;color:#374151;
+          padding:10px 18px;font-size:14px;font-weight:500;transition:all .15s}
+        .btn-ghost:hover{border-color:#9ca3af;background:#f9fafb}
+        .btn-danger{background:none;border:1.5px solid #fca5a5;border-radius:6px;color:#dc2626;
+          padding:5px 10px;font-size:12px;font-weight:500;transition:all .15s}
+        .btn-danger:hover{background:#fee2e2}
+        .input-base{background:white;border:1.5px solid #e5e7eb;border-radius:8px;color:#111827;
+          padding:10px 12px;font-size:14px;transition:border-color .15s}
+        .input-base:focus{border-color:#d4a017}
+        .select-base{background:white;border:1.5px solid #e5e7eb;border-radius:8px;color:#374151;
+          padding:9px 10px;font-size:13px;-webkit-appearance:none}
+        .select-base:focus{border-color:#d4a017}
+        .toggle-present{width:40px;height:22px;border-radius:11px;border:none;cursor:pointer;
+          position:relative;transition:background .2s;flex-shrink:0}
+        .toggle-present::after{content:'';position:absolute;top:3px;width:16px;height:16px;
+          border-radius:50%;background:white;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+      `}</style>
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div style={{ background: "#1a1a1a", borderBottom: "1px solid #333", padding: "0 16px", display: "flex", alignItems: "stretch", overflowX: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", marginRight: 16, flexShrink: 0 }}>
+          <img src="data:image/png;base64,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" alt="Los Gatos United Sting" style={{ height:52, objectFit:"contain" }}/>
+        </div>
+        <div style={{ display: "flex", flex: 1 }}>
+          {[["roster","Roster"],["schedule","Schedule"],["lineup","Lineup"],["game","Game"],["history","Stats"]].map(([v, l]) => (
+            <button key={v} className={`tab${view === v ? " on" : ""}`} onClick={() => setView(v)}>{l}</button>
+          ))}
+        </div>
+        {hasGame && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 12, flexShrink: 0 }}>
+            {gameActive && <span className={paused ? "" : "pulse"} style={{ width: 7, height: 7, borderRadius: "50%", background: paused ? "#9ca3af" : "#dc2626", display: "inline-block" }} />}
+            <span style={{ fontWeight: 700, fontSize: 15, color: halftime ? "#d97706" : gameOver ? "#d4a017" : "#111827", fontFamily: "'DM Mono',monospace" }}>
+              {halftime ? "Half Time" : gameOver ? "Full Time" : `H${half} · ${fmt(elapsed)}`}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Content ────────────────────────────────────────────────────────── */}
+      <div style={{ padding: "20px 16px", maxWidth: 580, margin: "0 auto" }}>
+
+        {view === "roster" && (
+          <div className="fade">
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700 }}>Squad</h2>
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={() => setRosterSort(s => s === "name" ? "number" : "name")} style={{ fontSize:12, padding:"5px 10px", borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", color:"#374151", fontWeight:600, cursor:"pointer" }}>
+                  Sort: {rosterSort === "name" ? "Name" : "#"}
+                </button>
+                <button onClick={() => setShowExport(s => !s)} style={{ fontSize:12, padding:"5px 10px", borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", color:"#374151", fontWeight:600, cursor:"pointer" }}>⬆ Export</button>
+                <button onClick={() => setShowImport(s => !s)} style={{ fontSize:12, padding:"5px 10px", borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", color:"#374151", fontWeight:600, cursor:"pointer" }}>⬇ Import</button>
+              </div>
+            </div>
+
+            {showExport && (() => {
+              const csv = ["#,Name,Positions,Notes", ...players.map(p => `${p.number||""},${p.name},${(p.prefRoles||[]).join("|")},${(p.notes||"").replace(/,/g,";")}`)].join("\n");
+              return (
+                <Card style={{ marginBottom:12, background:"#f9fafb" }}>
+                  <SectionLabel>Export Roster (CSV)</SectionLabel>
+                  <textarea readOnly value={csv} onClick={e => e.target.select()} style={{ width:"100%", fontFamily:"monospace", fontSize:11, padding:8, borderRadius:6, border:"1px solid #e5e7eb", minHeight:80, resize:"vertical", background:"white" }} />
+                  <p style={{ fontSize:11, color:"#9ca3af", marginTop:6 }}>Tap the box to select all, then copy.</p>
+                </Card>
+              );
+            })()}
+
+            {showImport && (
+              <Card style={{ marginBottom:12, background:"#f9fafb" }}>
+                <SectionLabel>Import Roster (CSV)</SectionLabel>
+                <p style={{ fontSize:11, color:"#6b7280", marginBottom:6 }}>Paste CSV with columns: #, Name, Positions (GK|DEF|etc), Notes</p>
+                <textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder={"1,Oliver,GK|DEF,Captain\n2,Matthew,MID,"} style={{ width:"100%", fontFamily:"monospace", fontSize:11, padding:8, borderRadius:6, border:"1px solid #e5e7eb", minHeight:80, resize:"vertical" }} />
+                <button onClick={() => {
+                  const lines = importText.trim().split("\n").filter(l => l && !l.startsWith("#,Name"));
+                  const imported = lines.map((l, i) => {
+                    const [num, name, roles, ...noteParts] = l.split(",");
+                    if (!name?.trim()) return null;
+                    return { id: Date.now() + i, name: name.trim(), number: num?.trim()||"", prefRoles: roles ? roles.split("|").filter(r => ["GK","DEF","MID","FWD"].includes(r)) : [], notes: noteParts.join(",").trim(), totalTime:0, games:0, present:true, posHistory:{GK:0,DEF:0,MID:0,FWD:0} };
+                  }).filter(Boolean);
+                  if (imported.length === 0) return;
+                  if (confirm(`Import ${imported.length} players? This will replace the current roster.`)) {
+                    setPlayers(imported); setImportText(""); setShowImport(false);
+                  }
+                }} className="btn-primary" style={{ marginTop:8, padding:"8px 16px", fontSize:13 }}>Import</button>
+              </Card>
+            )}
+
+            {/* Add player */}
+            <Card style={{ marginBottom: 16 }}>
+              <SectionLabel>Add Player</SectionLabel>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={newNumber} onChange={e => setNewNumber(e.target.value)} placeholder="#" className="input-base" style={{ width: 52 }} />
+                <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === "Enter" && addPlayer()} placeholder="Player name" className="input-base" style={{ flex: 1 }} />
+                <button onClick={addPlayer} className="btn-primary" style={{ flexShrink: 0 }}>Add</button>
+              </div>
+            </Card>
+
+            {/* Player list */}
+            <SectionLabel>Players — tap Edit to set position preferences</SectionLabel>
+            {[...players].sort((a,b) => rosterSort === "number"
+              ? (parseInt(a.number||999) - parseInt(b.number||999))
+              : a.name.localeCompare(b.name)
+            ).map(p => (
+              <div key={p.id} style={{ marginBottom: 8 }}>
+                {editId !== p.id ? (
+                  <Card style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px" }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 8, background: "#fffbeb", border: "1.5px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14, color: "#d4a017", flexShrink: 0 }}>{p.number || "?"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</div>
+                      <div style={{ marginTop: 3, display: "flex", gap: 3, flexWrap: "wrap" }}>
+                        {(!p.prefRoles || p.prefRoles.length === 0)
+                          ? <span style={{ fontSize: 10, fontWeight: 500, color: "#6b7280", background: "#f3f4f6", padding: "1px 6px", borderRadius: 20 }}>Any position</span>
+                          : p.prefRoles.map(r => <RoleChip key={r} role={r} />)}
+                      </div>
+                      {p.notes && <div style={{ fontSize:11, color:"#6b7280", marginTop:3, fontStyle:"italic" }}>📝 {p.notes}</div>}
+                    </div>
+                    <button onClick={() => setEditId(p.id)} className="btn-ghost" style={{ padding: "6px 12px", fontSize: 12 }}>Edit</button>
+                    <button onClick={() => removePlayer(p.id)} className="btn-danger">✕</button>
+                  </Card>
+                ) : (
+                  <Card style={{ border: "1.5px solid #d4a017" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#d4a017" }}>Editing: {p.name}</span>
+                      <button onClick={() => setEditId(null)} className="btn-primary" style={{ padding: "6px 16px", fontSize: 13 }}>Done</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                      <input value={p.number} onChange={e => updatePlayer(p.id, { number: e.target.value })} placeholder="#" className="input-base" style={{ width: 52 }} />
+                      <input value={p.name}   onChange={e => updatePlayer(p.id, { name:   e.target.value })} placeholder="Name" className="input-base" style={{ flex: 1 }} />
+                    </div>
+                    <SectionLabel>Position preferences <span style={{ fontSize: 10, color: "#9ca3af", fontWeight: 400, letterSpacing: 0 }}>(select all that apply)</span></SectionLabel>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                      {["GK","DEF","MID","FWD"].map(role => {
+                        const prefs  = p.prefRoles || [];
+                        const active = prefs.includes(role);
+                        const rc = ROLE_COLOR[role], bg = ROLE_BG[role];
+                        return (
+                          <button key={role} onClick={() => updatePlayer(p.id, { prefRoles: active ? prefs.filter(r => r !== role) : [...prefs, role] })} style={{
+                            padding: "9px 18px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                            background: active ? rc : bg, color: active ? "white" : rc,
+                            border: `1.5px solid ${active ? rc : bg}`,
+                          }}>{role}</button>
+                        );
+                      })}
+                    </div>
+                    <SectionLabel style={{ marginTop:10 }}>Notes <span style={{ fontSize:10, color:"#9ca3af", fontWeight:400, letterSpacing:0 }}>(injury, late arrival, etc.)</span></SectionLabel>
+                    <textarea value={p.notes||""} onChange={e => updatePlayer(p.id, { notes: e.target.value })} placeholder="e.g. Injured ankle, arriving late…" className="input-base" style={{ width:"100%", resize:"vertical", minHeight:56, fontSize:13 }} />
+                    <p style={{ fontSize: 12, color: "#6b7280", fontStyle: "italic", lineHeight: 1.6, marginTop:10 }}>
+                      {(() => {
+                        const pr = p.prefRoles || [];
+                        if (pr.length === 0)                        return "No preference — fills any slot based on team needs.";
+                        if (pr.includes("GK") && pr.length === 1)  return "🧤 GK only. Plays the full half as goalkeeper.";
+                        if (pr.includes("GK"))                     return `🧤 GK or ${pr.filter(r => r !== "GK").join("/")}. If selected as GK, plays full half.`;
+                        return `Preferred: ${pr.join(" or ")}.`;
+                      })()}
+                    </p>
+                  </Card>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ════════════════════════════ SCHEDULE ══════════════════════════════ */}
+        {view === "schedule" && (() => {
+          const ICS_URL = "https://losgatosunited.byga.net/cal/d6wh4AWLIP.ics";
+          const PROXY   = "https://corsproxy.io/?url=";
+
+          // Parse ICS text into game objects
+          const parseICS = (text) => {
+            const events = [];
+            const blocks = text.split("BEGIN:VEVENT");
+            blocks.slice(1).forEach(block => {
+              const get = (key) => {
+                const m = block.match(new RegExp(`${key}[^:]*:([^\\r\\n]+)`));
+                return m ? m[1].trim() : "";
+              };
+              const dtRaw = get("DTSTART");
+              const uid   = get("UID");
+              const sum   = get("SUMMARY");
+              const loc   = get("LOCATION");
+              if (!dtRaw || !uid) return;
+              // Parse YYYYMMDDTHHMMSSZ or YYYYMMDDTHHMMSS
+              const y = dtRaw.slice(0,4), mo = dtRaw.slice(4,6), d = dtRaw.slice(6,8);
+              const h = dtRaw.slice(9,11)||"00", mi = dtRaw.slice(11,13)||"00";
+              const dtDate = new Date(`${y}-${mo}-${d}T${h}:${mi}:00${dtRaw.endsWith("Z") ? "Z" : ""}`);
+              // Extract opponent from summary like "LGU Sting vs Opponent"
+              const opp = sum.replace(/LGU\s*Sting\s*(vs?\.?\s*)?/i, "").trim() || sum;
+              events.push({ uid, dtstart: dtDate.toISOString(), summary: sum, location: loc, opponent: opp });
+            });
+            return events.sort((a,b) => a.dtstart.localeCompare(b.dtstart));
+          };
+
+          const syncCalendar = async () => {
+            setCalStatus("loading");
+            try {
+              const res  = await fetch(PROXY + encodeURIComponent(ICS_URL));
+              const text = await res.text();
+              const fetched = parseICS(text);
+              setGames(prev => {
+                // Merge: keep savedPlan from existing games, add new, remove ones no longer in feed
+                const prevMap = Object.fromEntries(prev.map(g => [g.uid, g]));
+                return fetched.map(g => ({ ...g, savedPlan: prevMap[g.uid]?.savedPlan || null }));
+              });
+              setCalStatus("ok");
+            } catch(e) {
+              setCalStatus("error");
+            }
+          };
+
+          const saveGamePlan = (uid, plan) => {
+            setGames(prev => prev.map(g => g.uid === uid ? { ...g, savedPlan: plan } : g));
+          };
+          const clearGamePlan = (uid) => {
+            setGames(prev => prev.map(g => g.uid === uid ? { ...g, savedPlan: null } : g));
+          };
+
+          const now = new Date().toISOString();
+          const upcoming = games.filter(g => g.dtstart >= now);
+          const past     = games.filter(g => g.dtstart <  now);
+
+          const fmtGame = (iso) => {
+            const d = new Date(iso);
+            return d.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+          };
+
+          const GameRow = ({ g }) => {
+            const hasPlan = !!g.savedPlan;
+            const isPast  = g.dtstart < now;
+            const [showAttend, setShowAttend] = useState(false);
+            const presentCount = players.filter(p => p.present).length;
+            return (
+              <div style={{ borderTop:"1px solid #f3f4f6" }}>
+                <div style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:12 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:700, fontSize:14, color: isPast ? "#9ca3af" : "#111827", marginBottom:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {g.opponent || g.summary}
+                    </div>
+                    <div style={{ fontSize:12, color:"#6b7280" }}>{fmtGame(g.dtstart)}</div>
+                    {g.location && <div style={{ fontSize:11, color:"#9ca3af", marginTop:1 }}>📍 {g.location}</div>}
+                    {g.result != null && (
+                      <div style={{ marginTop:4, fontSize:12, fontWeight:700, color: g.result === "W" ? "#16a34a" : g.result === "L" ? "#dc2626" : "#6b7280" }}>
+                        {g.result === "W" ? "✓ Win" : g.result === "L" ? "✗ Loss" : "— Draw"} {g.ourScore}–{g.theirScore}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end", flexShrink:0 }}>
+                    {!isPast && (
+                      <button onClick={() => setShowAttend(s => !s)}
+                        style={{ fontSize:11, padding:"4px 9px", borderRadius:6, border:"1.5px solid #e5e7eb", background: showAttend ? "#f9fafb" : "white", color:"#6b7280", fontWeight:600, cursor:"pointer" }}>
+                        👥 Attendance
+                      </button>
+                    )}
+                    {hasPlan ? (
+                      <>
+                        <span style={{ fontSize:11, fontWeight:600, color:"#16a34a", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:20, padding:"2px 9px" }}>✓ Lineup Set</span>
+                        <div style={{ display:"flex", gap:5 }}>
+                          <button onClick={() => { setActiveGameId(g.uid); setSavedPlan(g.savedPlan); setView("lineup"); }}
+                            style={{ fontSize:11, padding:"4px 9px", borderRadius:6, border:"1.5px solid #d4a017", background:"white", color:"#d4a017", fontWeight:600, cursor:"pointer" }}>Edit</button>
+                          <button onClick={() => { if(confirm("Clear saved lineup for this game?")) clearGamePlan(g.uid); }}
+                            style={{ fontSize:11, padding:"4px 9px", borderRadius:6, border:"1.5px solid #fca5a5", background:"white", color:"#dc2626", fontWeight:600, cursor:"pointer" }}>✕</button>
+                        </div>
+                      </>
+                    ) : (
+                      <button onClick={() => { setActiveGameId(g.uid); setSavedPlan(null); setView("lineup"); }}
+                        style={{ fontSize:12, padding:"6px 12px", borderRadius:8, border:"1.5px solid #e5e7eb", background:"white", color:"#374151", fontWeight:600, cursor:"pointer" }}>
+                        Set Lineup
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {showAttend && (
+                  <div style={{ padding:"0 16px 14px", borderTop:"1px solid #f9fafb" }}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>
+                      Who's coming? · {presentCount} present
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                      {players.map(p => (
+                        <button key={p.id} onClick={() => togglePresent(p.id)}
+                          style={{ fontSize:12, fontWeight:600, padding:"5px 10px", borderRadius:20, border:`1.5px solid ${p.present ? "#d4a017" : "#e5e7eb"}`, background: p.present ? "#fffbeb" : "white", color: p.present ? "#d4a017" : "#9ca3af", cursor:"pointer" }}>
+                          {p.present ? "✓ " : ""}{p.name}{p.number ? ` #${p.number}` : ""}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          return (
+            <div className="fade">
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                <div>
+                  <h2 style={{ fontSize:18, fontWeight:700, marginBottom:2 }}>Schedule</h2>
+                  <p style={{ fontSize:12, color:"#9ca3af" }}>Synced from Los Gatos United</p>
+                </div>
+                <button onClick={syncCalendar} disabled={calStatus==="loading"}
+                  style={{ padding:"8px 14px", borderRadius:8, border:"1.5px solid #e5e7eb", background:"white", fontWeight:600, fontSize:13, color:"#374151", cursor:"pointer", display:"flex", alignItems:"center", gap:6, opacity: calStatus==="loading" ? 0.6 : 1 }}>
+                  {calStatus==="loading" ? "⏳ Syncing…" : "🔄 Sync"}
+                </button>
+              </div>
+
+              {calStatus === "error" && (
+                <div style={{ padding:"12px 14px", borderRadius:8, background:"#fef2f2", border:"1px solid #fca5a5", fontSize:13, color:"#dc2626", marginBottom:14 }}>
+                  ⚠ Couldn't reach the calendar. Check your connection and try again.
+                </div>
+              )}
+
+              {games.length === 0 ? (
+                <div style={{ textAlign:"center", padding:"60px 0", color:"#9ca3af" }}>
+                  <div style={{ fontSize:40, marginBottom:12 }}>📅</div>
+                  <div style={{ fontSize:15, fontWeight:600, color:"#374151", marginBottom:6 }}>No games yet</div>
+                  <div style={{ fontSize:13, marginBottom:20 }}>Tap Sync to load from the team calendar</div>
+                  <button onClick={syncCalendar} className="btn-primary" style={{ padding:"10px 28px" }}>Sync Calendar</button>
+                </div>
+              ) : (
+                <>
+                  {upcoming.length > 0 && (
+                    <div style={{ background:"white", border:"1px solid #e5e7eb", borderRadius:12, overflow:"hidden", marginBottom:16, boxShadow:"0 1px 3px rgba(0,0,0,0.04)" }}>
+                      <div style={{ padding:"12px 16px 8px", background:"#f9fafb", borderBottom:"1px solid #f3f4f6" }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.06em" }}>Upcoming — {upcoming.length} game{upcoming.length!==1?"s":""}</span>
+                      </div>
+                      {upcoming.map(g => <GameRow key={g.uid} g={g} />)}
+                    </div>
+                  )}
+                  {past.length > 0 && (
+                    <div style={{ background:"white", border:"1px solid #e5e7eb", borderRadius:12, overflow:"hidden", boxShadow:"0 1px 3px rgba(0,0,0,0.04)" }}>
+                      <div style={{ padding:"12px 16px 8px", background:"#f9fafb", borderBottom:"1px solid #f3f4f6" }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.06em" }}>Past — {past.length} game{past.length!==1?"s":""}</span>
+                      </div>
+                      {past.map(g => <GameRow key={g.uid} g={g} />)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ════════════════════════════ LINEUP ══════════════════════════════ */}
+        {view === "lineup" && (() => {
+          // Live game: show live field + sub controls
+          if (hasGame && !gameOver) {
+            const data = { posMap, starters: onField, bench: onBench, subs: subSchedule };
+            const { posMap: pm, starters, bench, subs } = data;
+            return (
+              <div className="fade">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 700 }}>{`Half ${half} Lineup`}</h2>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#d4a017", background: "#fffbeb", padding: "4px 10px", borderRadius: 20 }}>{formation.label}</span>
+                </div>
+                <Card style={{ padding: "16px 12px", marginBottom: tapSubOut ? 8 : 16, background: "transparent", border: "1.5px solid #fde68a", boxShadow: "none" }}>
+                  <Field formation={formation} posMap={pm} players={players} sessionTime={gameActive ? sessionTime : null}
+                    onTapPlayer={gameActive ? (pid) => { setTapSubOut(tapSubOut === pid ? null : pid); setManOut(String(pid)); } : null}
+                    tapSubOut={tapSubOut} />
+                  {gameActive && !tapSubOut && onBench.length > 0 && <p style={{ textAlign:"center", fontSize:11, color:"#9ca3af", marginTop:6 }}>Tap a player to sub them out</p>}
+                </Card>
+                {tapSubOut && onBench.length > 0 && (
+                  <Card style={{ marginBottom:16, background:"#fef2f2", border:"1.5px solid #fca5a5" }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:"#dc2626", marginBottom:8 }}>
+                      Subbing out: {getName(tapSubOut)} — pick who's coming on:
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                      {onBench.map(id => (
+                        <button key={id} onClick={() => { setManOut(String(tapSubOut)); setManIn(String(id)); doManualSub(); setTapSubOut(null); }}
+                          style={{ fontSize:13, fontWeight:600, padding:"8px 14px", borderRadius:8, border:"1.5px solid #16a34a", background:"#f0fdf4", color:"#16a34a", cursor:"pointer" }}>
+                          {getName(id)}
+                        </button>
+                      ))}
+                      <button onClick={() => { setTapSubOut(null); setManOut(""); }} style={{ fontSize:12, padding:"8px 12px", borderRadius:8, border:"1.5px solid #e5e7eb", background:"white", color:"#9ca3af", cursor:"pointer" }}>Cancel</button>
+                    </div>
+                  </Card>
+                )}
+                <Card style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px 8px", borderBottom: "1px solid #f3f4f6" }}><SectionLabel style={{ margin: 0 }}>Starting Lineup</SectionLabel></div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead><tr style={{ background: "#f9fafb" }}>
+                      {["Slot","Player","Pref","Time"].map((h, i) => (
+                        <th key={i} style={{ padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 600, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase", borderBottom: "1px solid #f3f4f6" }}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody>
+                      {formation.slots.map(slot => {
+                        const pid = Object.entries(pm).find(([, v]) => v === slot.id)?.[0];
+                        const p   = pid ? getPlayer(pid) : null; if (!p) return null;
+                        const rc = ROLE_COLOR[slot.role], bg = ROLE_BG[slot.role];
+                        const secs = sessionTime[p.id] || 0;
+                        const mismatch = p.prefRoles && p.prefRoles.length > 0 && !p.prefRoles.includes(slot.role);
+                        return (
+                          <tr key={slot.id} style={{ borderTop: "1px solid #f9fafb" }}>
+                            <td style={{ padding: "9px 12px" }}><span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700, color: rc, background: bg }}>{slot.role}</span></td>
+                            <td style={{ padding: "9px 12px", fontWeight: 600 }}>{p.number ? `#${p.number} ` : ""}{p.name}</td>
+                            <td style={{ padding: "9px 12px" }}>
+                              <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                                {(!p.prefRoles || p.prefRoles.length === 0) ? <span style={{ fontSize: 11, color: "#9ca3af" }}>Any</span> : p.prefRoles.map(r => <RoleChip key={r} role={r} />)}
+                                {mismatch && <span title="Out of preferred position" style={{ fontSize: 12, marginLeft: 2 }}>⚡</span>}
+                              </div>
+                            </td>
+                            <td style={{ padding: "9px 12px", fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 500, color: "#d4a017" }}>{fmt(secs)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+                {bench.length > 0 && (
+                  <Card style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
+                    <div style={{ padding: "12px 16px 8px", borderBottom: "1px solid #f3f4f6" }}><SectionLabel style={{ margin: 0, color: "#d97706" }}>Bench</SectionLabel></div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}><tbody>
+                      {bench.map(id => {
+                        const p = getPlayer(id); if (!p) return null;
+                        const secs = sessionTime[p.id] || 0;
+                        return (
+                          <tr key={id} style={{ borderTop: "1px solid #f9fafb" }}>
+                            <td style={{ padding: "9px 12px" }}><span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 6, fontSize: 12, fontWeight: 700, color: "#d97706", background: "#fef3c7" }}>SUB</span></td>
+                            <td style={{ padding: "9px 12px", fontWeight: 600 }}>{p.number ? `#${p.number} ` : ""}{p.name}</td>
+                            <td style={{ padding: "9px 12px" }}><div style={{ display: "flex", gap: 3 }}>{(!p.prefRoles || p.prefRoles.length === 0) ? <span style={{ fontSize: 11, color: "#9ca3af" }}>Any</span> : p.prefRoles.map(r => <RoleChip key={r} role={r} />)}</div></td>
+                            <td style={{ padding: "9px 12px", fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 500, color: secs > 0 ? "#d4a017" : "#9ca3af" }}>{fmt(secs)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody></table>
+                  </Card>
+                )}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <SectionLabel style={{ margin: 0 }}>Substitution Schedule</SectionLabel>
+                    <span style={{ fontSize: 12, color: "#9ca3af" }}>{`Half ${half} live`}</span>
+                  </div>
+                  <SubTable schedule={subs} completed={completedSubs} players={players} formation={formation} />
+                </div>
+                {gameActive && onBench.length > 0 && (
+                  <Card style={{ marginBottom: 16 }}>
+                    <SectionLabel color="#d97706">Manual Sub</SectionLabel>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <select value={manOut} onChange={e => setManOut(e.target.value)} className="select-base" style={{ flex: 1, minWidth: 130, color: manOut ? "#dc2626" : "#374151" }}>
+                        <option value="">↑ Coming off</option>
+                        {onField.map(id => { const p = getPlayer(id); if (!p) return null; const sd = formation.slots.find(s => s.id === posMap[id]); const isGk = sd && sd.role === "GK"; return <option key={id} value={id} disabled={isGk}>{getName(id)} [{posMap[id]}]{isGk ? " (GK)" : ""}</option>; })}
+                      </select>
+                      <select value={manIn} onChange={e => setManIn(e.target.value)} className="select-base" style={{ flex: 1, minWidth: 130, color: manIn ? "#d4a017" : "#374151" }}>
+                        <option value="">↓ Coming on</option>
+                        {onBench.map(id => <option key={id} value={id}>{getName(id)}</option>)}
+                      </select>
+                      <button onClick={doManualSub} className="btn-primary" style={{ padding: "9px 18px" }}>Swap</button>
+                    </div>
+                  </Card>
+                )}
+              </div>
+            );
+          }
+
+          // Pre-game: Attendance + Formation + Game Plan
+          return (
+            <div className="fade">
+              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Today's Lineup</h2>
+
+              {/* Formation picker */}
+              <Card style={{ marginBottom: 14 }}>
+                <SectionLabel>Formation</SectionLabel>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  {Object.entries(FORMATIONS).map(([k, f]) => (
+                    <button key={k} onClick={() => setFormKey(k)} style={{
+                      padding: "8px 16px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                      background: formKey === k ? "#d4a017" : "#f3f4f6",
+                      color: formKey === k ? "white" : "#374151", border: "none",
+                    }}>{f.label}</button>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Attendance */}
+              <Card style={{ marginBottom: 14, padding: "14px 16px 10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <SectionLabel style={{ margin: 0 }}>Attendance</SectionLabel>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setPlayers(ps => ps.map(p => ({ ...p, present: true  })))} style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, color: "#d4a017", padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>All In</button>
+                    <button onClick={() => setPlayers(ps => ps.map(p => ({ ...p, present: false })))} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, color: "#6b7280", padding: "4px 10px", fontSize: 12, fontWeight: 600 }}>All Out</button>
+                  </div>
+                </div>
+                {(() => {
+                  const n = present.length;
+                  const bench = Math.max(0, n - FIELD_SIZE);
+                  let msg = "", color = "#d4a017", bg = "#fffbeb", border = "#fde68a";
+                  if (n < FIELD_SIZE) {
+                    msg = `⚠ Need at least ${FIELD_SIZE} players. Mark ${FIELD_SIZE - n} more as present.`;
+                    color = "#dc2626"; bg = "#fef2f2"; border = "#fca5a5";
+                  } else if (n > MAX_PRESENT) {
+                    const over = n - MAX_PRESENT;
+                    msg = `⚠ ${n} present — max is ${MAX_PRESENT}. Mark ${over} player${over > 1 ? "s" : ""} absent.`;
+                    color = "#92400e"; bg = "#fffbeb"; border = "#fcd34d";
+                  } else if (n === FIELD_SIZE) {
+                    msg = `${n} players — full field, no subs. Everyone plays 50 min.`;
+                  } else {
+                    const { total, desc } = getSubInfo(n);
+                    const maxFull = HALF_TEMPLATES[n] ? HALF_TEMPLATES[n].slice(1).filter(s => s.length === 1 && s[0][1]-s[0][0] === 25).length : 6;
+                    const noFullNote = maxFull === 0 ? " · no one plays 25 min straight ✓" : maxFull > 0 ? ` · player${maxFull>1?"s":""} play full half` : "";
+                    msg = `${n} present · ${bench} bench · ${total} subs/half at ${desc}${noFullNote}`;
+                  }
+                  return <div style={{ padding: "9px 12px", borderRadius: 8, background: bg, border: `1px solid ${border}`, fontSize: 13, color, fontWeight: 500, marginBottom: 10 }}>{msg}</div>;
+                })()}
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {players.map(p => (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 4px", borderBottom: "1px solid #f9fafb" }}>
+                      <button className="toggle-present" onClick={() => togglePresent(p.id)} style={{ background: p.present ? "#d4a017" : "#d1d5db" }}>
+                        <span style={{ position: "absolute", top: 3, left: p.present ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left .2s" }} />
+                      </button>
+                      <div style={{ width: 26, height: 26, borderRadius: 6, background: p.present ? "#fffbeb" : "#f9fafb", border: `1.5px solid ${p.present ? "#fde68a" : "#e5e7eb"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: p.present ? "#d4a017" : "#9ca3af", flexShrink: 0 }}>
+                        {p.number || "?"}
+                      </div>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: p.present ? "#111827" : "#9ca3af", flex: 1 }}>{p.name}</span>
+                      <div style={{ display: "flex", gap: 3 }}>
+                        {(!p.prefRoles || p.prefRoles.length === 0)
+                          ? <span style={{ fontSize: 10, color: "#9ca3af", background: "#f3f4f6", padding: "1px 6px", borderRadius: 20, fontWeight: 500 }}>Any</span>
+                          : p.prefRoles.map(r => <RoleChip key={r} role={r} />)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {(present.length < FIELD_SIZE || present.length > MAX_PRESENT) && (
+                <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: present.length > MAX_PRESENT ? "#92400e" : "#6b7280" }}>
+                    {present.length > MAX_PRESENT
+                      ? `Too many players (${present.length}). Max is ${MAX_PRESENT}. Mark ${present.length - MAX_PRESENT} absent above.`
+                      : `Mark at least ${FIELD_SIZE} players as present to generate a plan.`}
+                  </div>
+                </div>
+              )}
+              {present.length >= FIELD_SIZE && present.length <= MAX_PRESENT && (() => {
+                // ── Game Plan ────────────────────────────────────────────────
+                const sim = simulateFullGame(present, formation, gamePlanSeed);
+                const { intervals, playerMins, h1Subs, h2Subs } = sim;
+
+                const h1Plan = buildHalfPlan(present, formation, {}, null, gamePlanSeed);
+                const h1GameSec = {};
+                present.forEach(p => {
+                  h1GameSec[p.id] = intervals
+                    .filter(iv => iv.pid === p.id && iv.half === 1)
+                    .reduce((s, iv) => s + (iv.endMin - iv.startMin), 0) * 60;
+                });
+                const gkSlot  = formation.slots.find(s => s.role === "GK");
+                const h1GkPid = gkSlot ? Number(Object.entries(h1Plan.posMap).find(([,v]) => v === gkSlot.id)?.[0]) : null;
+                const h2Plan  = buildHalfPlan(present, formation, h1GameSec, h1GkPid, gamePlanSeed + 1);
+
+                const { total: totalSubsHalf, desc: subDesc } = getSubInfo(present.length);
+                const sortedByTime = [...present].sort((a, b) => (playerMins[b.id] || 0) - (playerMins[a.id] || 0));
+                const halfMins = (pid, h) => intervals.filter(iv => iv.pid === pid && iv.half === h).reduce((s, iv) => s + (iv.endMin - iv.startMin), 0);
+
+                const SubRow = ({ s, i }) => {
+                  const slotDef = formation.slots.find(sl => sl.id === s.slot);
+                  const rc = slotDef ? ROLE_COLOR[slotDef.role] : "#d4a017";
+                  const bg = slotDef ? ROLE_BG[slotDef.role]   : "#fef3c7";
+                  return (
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", borderTop: i === 0 ? "none" : "1px solid #f9fafb" }}>
+                      <span style={{ fontFamily:"'DM Mono',monospace", fontWeight:700, fontSize:14, color:"#111827", width:26, flexShrink:0 }}>{s.minute}′</span>
+                      <span style={{ padding:"2px 7px", borderRadius:20, fontSize:11, fontWeight:600, color:rc, background:bg, flexShrink:0 }}>{slotLabel(s.slot)}</span>
+                      <span style={{ fontSize:13, color:"#dc2626", fontWeight:600 }}>↑ {getPlayer(s.outId)?.name}</span>
+                      <span style={{ color:"#d1d5db" }}>·</span>
+                      <span style={{ fontSize:13, color:"#16a34a", fontWeight:600 }}>↓ {getPlayer(s.inId)?.name}</span>
+                    </div>
+                  );
+                };
+
+                const renderBar = (ivs, halfDur) => (
+                  <div style={{ flex: halfDur, position:"relative", height:22, background:"#f3f4f6", borderRadius:3, overflow:"hidden" }}>
+                    {ivs.map((iv, i) => {
+                      const leftPct  = (iv.startMin / halfDur) * 100;
+                      const widthPct = ((iv.endMin - iv.startMin) / halfDur) * 100;
+                      const slotDef  = formation.slots.find(s => s.id === iv.slot);
+                      const rc = slotDef ? ROLE_COLOR[slotDef.role] : "#d4a017";
+                      return (
+                        <div key={i} style={{ position:"absolute", top:2, bottom:2, left:`${leftPct}%`, width:`${widthPct}%`, background:rc, borderRadius:2, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }}>
+                          {widthPct > 14 && <span style={{ fontSize:8, fontWeight:700, color:"white" }}>{slotLabel(iv.slot)}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+
+                const HalfCard = ({ label, plan, subs }) => (
+                  <Card style={{ marginBottom:14 }}>
+                    <SectionLabel>{label}</SectionLabel>
+                    <Field formation={formation} posMap={plan.posMap} players={players} sessionTime={null} />
+                    {plan.bench.length > 0 && (
+                      <div style={{ marginTop:10 }}>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:5 }}>Bench</div>
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                          {plan.bench.map(id => { const p = getPlayer(id); return p ? <span key={id} style={{ fontSize:12, fontWeight:600, background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:6, padding:"3px 9px", color:"#374151" }}>{p.number ? `#${p.number} ` : ""}{p.name}</span> : null; })}
+                        </div>
+                      </div>
+                    )}
+                    {subs.length > 0 && (
+                      <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid #f3f4f6" }}>
+                        <div style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:4 }}>Substitutions</div>
+                        {subs.map((s, i) => <SubRow key={i} s={s} i={i} />)}
+                      </div>
+                    )}
+                  </Card>
+                );
+
+                return (
+                  <>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
+                      <div>
+                        <h3 style={{ fontSize:15, fontWeight:700, marginBottom:2 }}>Game Plan</h3>
+                        <p style={{ fontSize:13, color:"#6b7280" }}>{formation.label} · {present.length} players · {totalSubsHalf} sub{totalSubsHalf !== 1 ? "s" : ""}/half{subDesc ? ` at ${subDesc}` : ""}</p>
+                      </div>
+                      <button onClick={() => setGamePlanSeed(s => s + 1)} style={{ flexShrink:0, marginLeft:8, padding:"7px 12px", fontSize:13, fontWeight:600, background:"#f9fafb", border:"1.5px solid #e5e7eb", borderRadius:8, cursor:"pointer", color:"#374151", display:"flex", alignItems:"center", gap:5 }}>
+                        🔀 Reshuffle
+                      </button>
+                    </div>
+
+                    <HalfCard label="Half 1 — Starting Lineup" plan={h1Plan} subs={h1Subs} />
+                    <HalfCard label="Half 2 — Starting Lineup" plan={h2Plan} subs={h2Subs} />
+
+                    <Card style={{ marginBottom:14 }}>
+                      <SectionLabel>Projected Playing Time</SectionLabel>
+                      <div style={{ overflowX:"auto" }}>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                          <thead><tr style={{ borderBottom:"2px solid #f3f4f6" }}>
+                            {["Player","H1","H2","Total"].map((h, i) => (
+                              <th key={h} style={{ padding:"6px 8px", textAlign: i===0?"left":"center", fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em" }}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {sortedByTime.map((p, i) => {
+                              const h1m = halfMins(p.id, 1), h2m = halfMins(p.id, 2);
+                              const firstRole = p.prefRoles?.[0];
+                              return (
+                                <tr key={p.id} style={{ borderTop: i===0?"none":"1px solid #f9fafb", background: i%2===0?"white":"#fafafa" }}>
+                                  <td style={{ padding:"8px 8px" }}>
+                                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                                      {p.number && <span style={{ fontSize:11, fontWeight:700, color: firstRole ? ROLE_COLOR[firstRole] : "#374151", background: firstRole ? ROLE_BG[firstRole] : "#f3f4f6", padding:"1px 6px", borderRadius:20 }}>#{p.number}</span>}
+                                      <span style={{ fontWeight:600, color:"#111827" }}>{p.name}</span>
+                                    </div>
+                                  </td>
+                                  <td style={{ textAlign:"center", fontFamily:"'DM Mono',monospace", fontWeight:600, fontSize:13, padding:"8px", color:"#d4a017" }}>{h1m}′</td>
+                                  <td style={{ textAlign:"center", fontFamily:"'DM Mono',monospace", fontWeight:600, fontSize:13, padding:"8px", color:"#d4a017" }}>{h2m}′</td>
+                                  <td style={{ textAlign:"center", fontFamily:"'DM Mono',monospace", fontWeight:700, fontSize:14, padding:"8px", color:"#111827" }}>{h1m+h2m}′</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
+
+                    <Card style={{ marginBottom:14, padding:"16px 16px 18px" }}>
+                      <SectionLabel>Timeline</SectionLabel>
+                      <div style={{ display:"flex", marginBottom:3, paddingLeft:80 }}>
+                        <div style={{ flex:25, textAlign:"center", fontSize:10, fontWeight:600, color:"#9ca3af", letterSpacing:"0.05em", textTransform:"uppercase" }}>Half 1</div>
+                        <div style={{ width:8 }} />
+                        <div style={{ flex:25, textAlign:"center", fontSize:10, fontWeight:600, color:"#9ca3af", letterSpacing:"0.05em", textTransform:"uppercase" }}>Half 2</div>
+                      </div>
+                      <div style={{ display:"flex", marginBottom:6, paddingLeft:80 }}>
+                        {[0,5,10,15,20,25].map((m,i) => <div key={m} style={{ flex: i<5?5:0, fontSize:9, color:"#d1d5db", fontFamily:"'DM Mono',monospace", textAlign: i===0?"left":i===5?"right":"center" }}>{m}</div>)}
+                        <div style={{ width:8 }} />
+                        {[25,30,35,40,45,50].map((m,i) => <div key={m} style={{ flex: i<5?5:0, fontSize:9, color:"#d1d5db", fontFamily:"'DM Mono',monospace", textAlign: i===0?"left":i===5?"right":"center" }}>{m}</div>)}
+                      </div>
+                      {sortedByTime.map(p => {
+                        const h1ivs = intervals.filter(iv => iv.pid === p.id && iv.half === 1);
+                        const h2ivs = intervals.filter(iv => iv.pid === p.id && iv.half === 2);
+                        return (
+                          <div key={p.id} style={{ display:"flex", alignItems:"center", marginBottom:4 }}>
+                            <div style={{ width:80, paddingRight:6, flexShrink:0 }}>
+                              <div style={{ fontSize:11, fontWeight:600, color:"#374151", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name.split(" ")[0]}{p.number ? ` #${p.number}` : ""}</div>
+                              <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#9ca3af" }}>{playerMins[p.id] || 0}′</div>
+                            </div>
+                            {renderBar(h1ivs, 25)}
+                            <div style={{ width:8, flexShrink:0 }} />
+                            {renderBar(h2ivs, 25)}
+                          </div>
+                        );
+                      })}
+                      <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid #f3f4f6", display:"flex", gap:10, flexWrap:"wrap" }}>
+                        {["GK","DEF","MID","FWD"].map(r => (
+                          <div key={r} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <div style={{ width:12, height:9, borderRadius:2, background:ROLE_COLOR[r] }} />
+                            <span style={{ fontSize:11, color:"#6b7280", fontWeight:500 }}>{r}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+
+                      <div style={{ background:"#fffbeb", border:"1px solid #fde68a", borderRadius:12, padding:"16px 16px 14px", marginBottom:4 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:"#15803d", marginBottom:10 }}>✅ Everyone plays both halves.</div>
+                      {activeGameId && (
+                        <div style={{ fontSize:12, color:"#6b7280", marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+                          📅 Editing lineup for: <strong>{games.find(g=>g.uid===activeGameId)?.opponent || "game"}</strong>
+                        </div>
+                      )}
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button
+                          onClick={() => {
+                            const plan = { h1Plan, h2Plan, h1Subs, h2Subs, seed: gamePlanSeed, formKey };
+                            setSavedPlan(plan);
+                            if (activeGameId) {
+                              setGames(prev => prev.map(g => g.uid === activeGameId ? { ...g, savedPlan: plan } : g));
+                            }
+                          }}
+                          style={{ flex:1, padding:"12px 0", fontSize:14, fontWeight:600, borderRadius:10, border:"1.5px solid #d4a017", background: savedPlan?.seed === gamePlanSeed && savedPlan?.formKey === formKey ? "#d4a017" : "white", color: savedPlan?.seed === gamePlanSeed && savedPlan?.formKey === formKey ? "white" : "#d4a017", cursor:"pointer" }}
+                        >
+                          {savedPlan?.seed === gamePlanSeed && savedPlan?.formKey === formKey ? "✓ Lineup Saved" : "💾 Save Lineup"}
+                        </button>
+                        <button onClick={() => startGame(false)} className="btn-primary" style={{ flex:1, padding:"12px 0", fontSize:14, borderRadius:10 }}>
+                          ⚽ Start Game
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          );
+        })()}
+
+
+        {/* ════════════════════════════ GAME ═════════════════════════════════ */}
+        {view === "game" && (
+          <div className="fade">
+            {!hasGame && (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#9ca3af" }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>⚽</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#374151" }}>No game in progress</div>
+                {(() => {
+                  const now2 = new Date().toISOString();
+                  const next = games.find(g => g.dtstart >= now2 && g.savedPlan);
+                  const plan = savedPlan || next?.savedPlan || null;
+                  const label = next ? (next.opponent || next.summary) : null;
+                  if (plan) return (
+                    <div style={{ marginTop: 20 }}>
+                      {label && <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 2 }}>Next: <strong>{label}</strong></div>}
+                      <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>{FORMATIONS[plan.formKey]?.label || plan.formKey} · Lineup ready</div>
+                      <button onClick={() => startGame(false, plan)} className="btn-primary" style={{ padding: "12px 32px", fontSize: 15 }}>
+                        ⚽ Start Game
+                      </button>
+                      <div style={{ marginTop: 10, display:"flex", gap:12, justifyContent:"center" }}>
+                        <button onClick={() => { setActiveGameId(next?.uid||null); setView("lineup"); }} style={{ fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Edit lineup</button>
+                        {savedPlan && <button onClick={() => setSavedPlan(null)} style={{ fontSize: 12, color: "#9ca3af", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Clear saved</button>}
+                      </div>
+                    </div>
+                  );
+                  return <div style={{ fontSize: 13, marginTop: 6 }}>Go to Lineup to set attendance and start, or use Schedule to plan ahead</div>;
+                })()}
+              </div>
+            )}
+            {hasGame && (
+              <>
+                {/* Timer */}
+                <Card style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase" }}>Half {half}</span>
+                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 40, fontWeight: 700, color: halftime ? "#d97706" : gameOver ? "#d4a017" : paused ? "#6b7280" : "#111827", lineHeight: 1 }}>{fmt(elapsed)}</span>
+                    {gameActive && !halftime && !gameOver ? (
+                      <button
+                        onClick={() => setPaused(p => !p)}
+                        style={{ width: 36, height: 36, borderRadius: 8, border: "1.5px solid #e5e7eb", background: paused ? "#d4a017" : "white", color: paused ? "white" : "#374151", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                        title={paused ? "Resume" : "Pause"}
+                      >{paused ? "▶" : "⏸"}</button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#d1d5db" }}>25:00</span>
+                    )}
+                  </div>
+                  {/* Live score */}
+                  {!gameOver && (
+                    <div style={{ display:"flex", justifyContent:"center", alignItems:"center", gap:10, marginBottom:10, padding:"8px 0", borderTop:"1px solid #f3f4f6", borderBottom:"1px solid #f3f4f6" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ fontSize:11, color:"#9ca3af", fontWeight:600 }}>Sting</span>
+                        <button onClick={() => setOurScore(s => Math.max(0,s-1))} style={{ width:22, height:22, borderRadius:4, border:"1px solid #e5e7eb", background:"white", fontSize:13, cursor:"pointer", lineHeight:1 }}>−</button>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:22, fontWeight:700, color:"#16a34a", minWidth:20, textAlign:"center" }}>{ourScore}</span>
+                        <button onClick={() => setOurScore(s => s+1)} style={{ width:22, height:22, borderRadius:4, border:"1px solid #e5e7eb", background:"white", fontSize:13, cursor:"pointer", lineHeight:1 }}>+</button>
+                      </div>
+                      <span style={{ fontSize:18, color:"#d1d5db" }}>–</span>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <button onClick={() => setTheirScore(s => Math.max(0,s-1))} style={{ width:22, height:22, borderRadius:4, border:"1px solid #e5e7eb", background:"white", fontSize:13, cursor:"pointer", lineHeight:1 }}>−</button>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:22, fontWeight:700, color:"#dc2626", minWidth:20, textAlign:"center" }}>{theirScore}</span>
+                        <button onClick={() => setTheirScore(s => s+1)} style={{ width:22, height:22, borderRadius:4, border:"1px solid #e5e7eb", background:"white", fontSize:13, cursor:"pointer", lineHeight:1 }}>+</button>
+                        <span style={{ fontSize:11, color:"#9ca3af", fontWeight:600 }}>Opp</span>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ height: 6, background: "#f3f4f6", borderRadius: 6, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: paused ? "#9ca3af" : "linear-gradient(90deg,#d4a017,#22c55e)", borderRadius: 6, transition: "width 1s linear" }} />
+                  </div>
+                  {paused && gameActive && (
+                    <div style={{ marginTop: 8, textAlign: "center", fontSize: 12, fontWeight: 700, color: "#6b7280", letterSpacing: "0.1em" }}>⏸ PAUSED</div>
+                  )}
+                  {gameActive && nextSub && (() => {
+                    const sl = nextSub.minute * 60 - elapsed;
+                    if (sl < 0) return null;
+                    const sd = formation.slots.find(s => s.id === nextSub.slot);
+                    const rc = sd ? ROLE_COLOR[sd.role] : "#d4a017";
+                    const bg = sd ? ROLE_BG[sd.role]   : "#fef3c7";
+                    return (
+                      <div style={{ marginTop: 10, fontSize: 12, color: sl <= 60 ? "#d97706" : "#6b7280", textAlign: "center" }}>
+                        Sub in <strong style={{ fontFamily: "'DM Mono',monospace" }}>{fmt(sl)}</strong> — <span style={{ color: "#16a34a", fontWeight: 600 }}>{getName(nextSub.inId)}</span> replaces <span style={{ color: "#dc2626", fontWeight: 600 }}>{getName(nextSub.outId)}</span>
+                        {sd && <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 20, fontSize: 11, fontWeight: 600, color: rc, background: bg }}>{nextSub.slot}</span>}
+                      </div>
+                    );
+                  })()}
+                </Card>
+
+                {halftime && (
+                  <Card style={{ textAlign: "center", marginBottom: 16, padding: 24, background: "#fffbeb", border: "1.5px solid #fde68a" }}>
+                    <div style={{ fontSize: 32, marginBottom: 6 }}>⏸</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>Half Time</div>
+                    <div style={{ fontSize: 13, color: "#78350f", marginBottom: 16 }}>H2 lineup rebalances · GK always swaps</div>
+                    <button onClick={startH2} className="btn-primary" style={{ padding: "12px 32px", fontSize: 15 }}>Start 2nd Half</button>
+                  </Card>
+                )}
+                {gameOver && (
+                  <Card style={{ marginBottom: 16, padding: 20, background: "#fffbeb", border: "1.5px solid #fde68a" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#d4a017", marginBottom:14, textAlign:"center" }}>🏁 Full Time</div>
+                    <div style={{ fontSize:13, fontWeight:600, color:"#374151", marginBottom:8, textAlign:"center" }}>Final Score</div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, marginBottom:14 }}>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ fontSize:11, color:"#9ca3af", marginBottom:4 }}>Sting</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <button onClick={() => setOurScore(s => Math.max(0,s-1))} style={{ width:28, height:28, borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:32, fontWeight:700, color:"#111827", minWidth:32, textAlign:"center" }}>{ourScore}</span>
+                          <button onClick={() => setOurScore(s => s+1)} style={{ width:28, height:28, borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                        </div>
+                      </div>
+                      <span style={{ fontSize:24, color:"#d1d5db", fontWeight:300 }}>–</span>
+                      <div style={{ textAlign:"center" }}>
+                        <div style={{ fontSize:11, color:"#9ca3af", marginBottom:4 }}>Opponent</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                          <button onClick={() => setTheirScore(s => Math.max(0,s-1))} style={{ width:28, height:28, borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:32, fontWeight:700, color:"#111827", minWidth:32, textAlign:"center" }}>{theirScore}</span>
+                          <button onClick={() => setTheirScore(s => s+1)} style={{ width:28, height:28, borderRadius:6, border:"1.5px solid #e5e7eb", background:"white", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                        </div>
+                      </div>
+                    </div>
+                    {(() => {
+                      const res = ourScore > theirScore ? "W" : ourScore < theirScore ? "L" : "D";
+                      const resColor = res==="W" ? "#16a34a" : res==="L" ? "#dc2626" : "#6b7280";
+                      const resLabel = res==="W" ? "Win 🎉" : res==="L" ? "Loss" : "Draw";
+                      return (
+                        <div style={{ textAlign:"center" }}>
+                          <div style={{ fontSize:15, fontWeight:700, color:resColor, marginBottom:10 }}>{resLabel}</div>
+                          <button onClick={() => {
+                            const now3 = new Date().toISOString();
+                            const recentGame = games.find(g => Math.abs(new Date(g.dtstart) - new Date(now3)) < 12*3600*1000);
+                            if (recentGame) {
+                              setGames(prev => prev.map(g => g.uid === recentGame.uid ? { ...g, result:res, ourScore, theirScore } : g));
+                            }
+                          }} className="btn-primary" style={{ padding:"10px 24px", fontSize:14 }}>
+                            💾 Save Result
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </Card>
+                )}
+
+                {/* On field */}
+                <Card style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between" }}>
+                    <SectionLabel style={{ margin: 0, color: "#d4a017" }}>On Field</SectionLabel>
+                    <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{formation.label}</span>
+                  </div>
+                  <div style={{ padding: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {formation.slots.map(slot => {
+                        const pid = Object.entries(posMap).find(([, v]) => v === slot.id)?.[0];
+                        const p   = pid ? getPlayer(pid) : null; if (!p) return null;
+                        const rc  = ROLE_COLOR[slot.role], bg = ROLE_BG[slot.role];
+                        const secs = sessionTime[p.id] || 0;
+                        return (
+                          <div key={slot.id} style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{p.number ? `#${p.number} ` : ""}{p.name}</div>
+                              <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: "#d4a017", fontWeight: 500, marginTop: 2 }}>{fmt(secs)}</div>
+                            </div>
+                            <span style={{ padding: "2px 7px", borderRadius: 6, fontSize: 11, fontWeight: 700, color: rc, background: bg, flexShrink: 0, marginLeft: 6 }}>{slot.role}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </Card>
+
+                {onBench.length > 0 && (
+                  <Card style={{ marginBottom: 12 }}>
+                    <SectionLabel color="#d97706">Bench</SectionLabel>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                      {onBench.map(id => {
+                        const p = getPlayer(id); if (!p) return null;
+                        const secs = sessionTime[id] || 0;
+                        return (
+                          <div key={id} style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "10px 12px" }}>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{p.number ? `#${p.number} ` : ""}{p.name}</div>
+                            <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 12, color: secs > 0 ? "#d4a017" : "#d1d5db", fontWeight: 500, marginTop: 2 }}>{fmt(secs)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                )}
+
+                <div style={{ marginBottom: 12 }}>
+                  <SectionLabel>Sub Schedule — Half {half}</SectionLabel>
+                  <SubTable schedule={subSchedule} completed={completedSubs} players={players} formation={formation} />
+                </div>
+
+                {gameActive && onBench.length > 0 && (
+                  <Card style={{ marginBottom: 12 }}>
+                    <SectionLabel color="#d97706">Manual Sub</SectionLabel>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <select value={manOut} onChange={e => setManOut(e.target.value)} className="select-base" style={{ flex: 1, minWidth: 130, color: manOut ? "#dc2626" : "#374151" }}>
+                        <option value="">↑ Coming off</option>
+                        {onField.map(id => { const p = getPlayer(id); if (!p) return null; const sd = formation.slots.find(s => s.id === posMap[id]); const isGk = sd && sd.role === "GK"; return <option key={id} value={id} disabled={isGk}>{getName(id)} [{posMap[id]}]{isGk ? " (GK)" : ""}</option>; })}
+                      </select>
+                      <select value={manIn} onChange={e => setManIn(e.target.value)} className="select-base" style={{ flex: 1, minWidth: 130, color: manIn ? "#d4a017" : "#374151" }}>
+                        <option value="">↓ Coming on</option>
+                        {onBench.map(id => <option key={id} value={id}>{getName(id)}</option>)}
+                      </select>
+                      <button onClick={doManualSub} className="btn-primary" style={{ padding: "9px 18px" }}>Swap</button>
+                    </div>
+                  </Card>
+                )}
+
+                <Card>
+                  <SectionLabel>Match Log</SectionLabel>
+                  <div style={{ maxHeight: 130, overflowY: "auto", display: "flex", flexDirection: "column-reverse" }}>
+                    {[...gameLog].reverse().map((e, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "#6b7280", padding: "4px 0", borderBottom: "1px solid #f9fafb" }}>{e}</div>
+                    ))}
+                  </div>
+                </Card>
+                <button onClick={() => setView("lineup")} className="btn-ghost" style={{ width: "100%", marginTop: 12, padding: 11 }}>View Field Diagram & Sub Plan →</button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ════════════════════════════ STATS ════════════════════════════════ */}
+        {view === "history" && (() => {
+          const roles = ["GK", "DEF", "MID", "FWD"];
+          const sortedPlayers = [...players].sort((a, b) => (b.totalTime || 0) - (a.totalTime || 0));
+          const maxTime = Math.max(...players.map(p => p.totalTime || 0), 1);
+          const hasAnyHistory = players.some(p => Object.values(p.posHistory || {}).some(v => v > 0));
+          const totalMinutes = players.reduce((s, p) => s + (p.totalTime || 0), 0);
+          const avgMinutes = players.length ? totalMinutes / players.length : 0;
+          const results = games.filter(g => g.result != null);
+          const wins = results.filter(g => g.result === "W").length;
+          const losses = results.filter(g => g.result === "L").length;
+          const draws = results.filter(g => g.result === "D").length;
+          return (
+            <div className="fade">
+              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Season Stats</h2>
+
+              {/* Season record */}
+              {results.length > 0 && (
+                <Card style={{ marginBottom:14 }}>
+                  <SectionLabel>Season Record</SectionLabel>
+                  <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+                    {[["W", wins, "#16a34a", "#f0fdf4"], ["D", draws, "#6b7280", "#f9fafb"], ["L", losses, "#dc2626", "#fef2f2"]].map(([label, count, color, bg]) => (
+                      <div key={label} style={{ flex:1, textAlign:"center", padding:"10px 0", borderRadius:8, background:bg, border:`1px solid ${color}22` }}>
+                        <div style={{ fontSize:22, fontWeight:700, color, fontFamily:"'DM Mono',monospace" }}>{count}</div>
+                        <div style={{ fontSize:11, fontWeight:600, color, letterSpacing:"0.05em" }}>{label === "W" ? "Wins" : label === "D" ? "Draws" : "Losses"}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ borderTop:"1px solid #f3f4f6", paddingTop:10 }}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#9ca3af", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:6 }}>Results</div>
+                    {results.slice().reverse().map((g, i) => (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"5px 0", borderTop: i===0 ? "none":"1px solid #f9fafb" }}>
+                        <span style={{ fontSize:13, fontWeight:600, color:"#374151" }}>{g.opponent || g.summary}</span>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:13, color:"#6b7280" }}>{g.ourScore}–{g.theirScore}</span>
+                          <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20, color: g.result==="W"?"#16a34a":g.result==="L"?"#dc2626":"#6b7280", background: g.result==="W"?"#f0fdf4":g.result==="L"?"#fef2f2":"#f9fafb" }}>{g.result}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {hasAnyHistory && (
+                <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>
+                  Position counts show halves played at each role. Fair play score compares each player's minutes to the team average.
+                </p>
+              )}
+              {players.length === 0 && (
+                <div style={{ textAlign: "center", padding: "50px 0", color: "#9ca3af" }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>No data yet</div>
+                </div>
+              )}
+              {sortedPlayers.map(p => {
+                const pc   = ((p.totalTime || 0) / maxTime) * 100;
+                const mins = Math.floor((p.totalTime || 0) / 60);
+                const sec  = (p.totalTime || 0) % 60;
+                const avg  = p.games ? Math.round((p.totalTime || 0) / p.games / 60) : 0;
+                const ph   = p.posHistory || {};
+                const totalHalves = roles.reduce((s, r) => s + (ph[r] || 0), 0);
+                const neverPlayed = roles.filter(r => (ph[r] || 0) === 0 && r !== "GK");
+                const maxRoleCount = Math.max(...roles.map(r => ph[r] || 0), 1);
+                // Fair play: deviation from team avg (in minutes)
+                const playerMins = Math.floor((p.totalTime || 0) / 60);
+                const avgMins = Math.floor(avgMinutes / 60);
+                const diff = playerMins - avgMins;
+                const fairColor = Math.abs(diff) <= 2 ? "#16a34a" : Math.abs(diff) <= 6 ? "#d97706" : "#dc2626";
+                return (
+                  <Card key={p.id} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600 }}>{p.number ? `#${p.number} ` : ""}{p.name}</span>
+                          {(!p.prefRoles || p.prefRoles.length === 0)
+                            ? <span style={{ fontSize: 11, fontWeight: 500, color: "#6b7280", background: "#f3f4f6", padding: "2px 7px", borderRadius: 20 }}>Any</span>
+                            : p.prefRoles.map(r => <RoleChip key={r} role={r} />)}
+                          {!p.present && <span style={{ fontSize: 10, color: "#9ca3af", background: "#f3f4f6", padding: "1px 6px", borderRadius: 20 }}>Absent today</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>{p.games || 0} games · ~{avg} min/game avg</div>
+                        {p.notes && <div style={{ fontSize:11, color:"#6b7280", marginTop:2, fontStyle:"italic" }}>📝 {p.notes}</div>}
+                      </div>
+                      <div style={{ textAlign:"right", flexShrink:0, marginLeft:8 }}>
+                        <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 700, color: "#d4a017" }}>{mins}m {sec}s</div>
+                        {avgMinutes > 0 && (
+                          <div style={{ fontSize:11, fontWeight:600, color:fairColor, marginTop:2 }}>
+                            {diff > 0 ? `+${diff}` : diff}m vs avg
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Time bar */}
+                    <div style={{ height: 4, background: "#f3f4f6", borderRadius: 4, overflow: "hidden", marginBottom: totalHalves > 0 ? 10 : 0 }}>
+                      <div style={{ height: "100%", width: `${pc}%`, background: "#d4a017", borderRadius: 4 }} />
+                    </div>
+
+                    {/* Position history — bar chart */}
+                    {totalHalves > 0 && (
+                      <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                        {roles.map(r => {
+                          const count = ph[r] || 0;
+                          const pct2 = (count / maxRoleCount) * 100;
+                          const rc = ROLE_COLOR[r];
+                          const bg = ROLE_BG[r];
+                          return (
+                            <div key={r} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                              <div style={{ width:"100%", height:32, background:"#f3f4f6", borderRadius:4, overflow:"hidden", display:"flex", alignItems:"flex-end" }}>
+                                <div style={{ width:"100%", height:`${pct2}%`, background: count===0 ? "#f3f4f6" : rc, borderRadius:4, transition:"height 0.3s", minHeight: count>0?3:0 }} />
+                              </div>
+                              <div style={{ fontSize:10, fontWeight:700, color: count===0 ? "#d1d5db" : rc }}>{r}</div>
+                              <div style={{ fontSize:12, fontWeight:700, color: count===0 ? "#d1d5db" : "#111827", fontFamily:"'DM Mono',monospace" }}>{count > 0 ? count : "—"}</div>
+                            </div>
+                          );
+                        })}
+                        {neverPlayed.length > 0 && (
+                          <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 600, flexShrink: 0, maxWidth: 64, lineHeight: 1.3, alignSelf:"center" }}>
+                            ⚡ needs {neverPlayed.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+              {players.length > 0 && (
+                <button
+                  onClick={() => { if (confirm("Reset all season stats and position history?")) setPlayers(ps => ps.map(p => ({ ...p, totalTime: 0, games: 0, posHistory: { GK: 0, DEF: 0, MID: 0, FWD: 0 } }))); }}
+                  className="btn-danger" style={{ marginTop: 8, padding: "10px 18px", fontSize: 13 }}
+                >
+                  Reset Season Stats
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+      </div>
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
