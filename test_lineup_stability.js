@@ -26,8 +26,8 @@ const rawJs    = html.slice(srcStart, srcStart + 600_000)
   .replace(/\\'/g,  "'")
   .replace(/\\\\/g, '\\');
 
-// Keep only the pure-JS portion (lines 1-439, before JSX starts)
-const jsLines = rawJs.split('\n').slice(0, 439).join('\n');
+// Keep only the pure-JS portion (lines 1-471, before JSX starts)
+const jsLines = rawJs.split('\n').slice(0, 471).join('\n');
 const safeJs  = jsLines.replace(/const TEAM_LOGO_B64 = "[^"]*";/, 'const TEAM_LOGO_B64 = "";');
 
 // Evaluate with const→var so names land in the global context
@@ -714,6 +714,116 @@ console.log('\n=== 16. posHistory counts sum correctly across H1 + H2 ===');
   const gkCounts = present.map(p => (posHistory[p.id] || {}).GK || 0);
   const totalGK  = gkCounts.reduce((s, v) => s + v, 0);
   assert(totalGK === 2, `Total GK half-stints = 2 (one per half), got ${totalGK}`);
+}
+
+// ─── Group 17: buildFutureSubs — late arrival factored into next sub window ──
+console.log('\n=== 17. buildFutureSubs: late arrival is subbed in at the next window ===');
+{
+  // Simulate: 7 players start (no bench). At minute 7, an 8th player arrives.
+  // fieldNonGkIds = 6 non-GK players (all present, 7*60=420s each)
+  // benchIds = [8]  (the late arrival, 0 seconds played)
+  // GK is excluded from field non-GK and from subs.
+  const players    = makePlayers(8);
+  const present7   = players.slice(0, 7);
+  const seed       = 42;
+  const h1Plan     = buildHalfPlan(present7, formation, {}, null, seed, 0);
+
+  // Determine which player is GK in H1
+  const gkSlotId   = formation.slots.find(s => s.role === 'GK').id;
+  const gkPid      = Number(Object.entries(h1Plan.posMap).find(([, v]) => v === gkSlotId)?.[0]);
+
+  const fieldNonGk = h1Plan.starters.filter(id => id !== gkPid);
+  const latePlayer = players[7]; // player 8, id=8
+
+  // At minute 7, everyone on field has played 7*60 = 420s
+  const sessionSecs = {};
+  h1Plan.starters.forEach(id => { sessionSecs[id] = 7 * 60; }); // 420s each
+
+  // fieldSlots: pid -> slotId for non-GK starters
+  const fieldSlots = {};
+  fieldNonGk.forEach(id => { fieldSlots[id] = h1Plan.posMap[id]; });
+
+  const futureSubs = buildFutureSubs(7, fieldNonGk, [latePlayer.id], fieldSlots, sessionSecs);
+
+  // The late arrival (id=8, 0s) must be subbed in at the first future window (minute 10)
+  const sub10 = futureSubs.find(s => s.minute === 10);
+  assert(!!sub10, 'buildFutureSubs produces a sub at minute 10');
+  assert(sub10.inId === latePlayer.id, `Late arrival (id=${latePlayer.id}) is the inId at minute 10 (got ${sub10?.inId})`);
+
+  // The player coming off must be a non-GK field player (the one who has played most)
+  assert(fieldNonGk.includes(sub10.outId), `outId at minute 10 is a non-GK field player (got ${sub10?.outId})`);
+
+  // The slot assigned is a non-GK slot
+  const outSlotDef = formation.slots.find(s => s.id === sub10.slot);
+  assert(outSlotDef && outSlotDef.role !== 'GK', `Slot at minute 10 is not GK (got ${outSlotDef?.role})`);
+
+  // After minute 10 the bench now has the subbed-out player; minute 15 window exists
+  // (the original outId is now on bench with 10*60=600s; the late arrival has 0+3min=180s)
+  // → someone on field with most time comes off at 15
+  const sub15 = futureSubs.find(s => s.minute === 15);
+  assert(!!sub15, 'buildFutureSubs produces a sub at minute 15 (bench has 1 player after minute-10 swap)');
+
+  // No sub should involve the GK slot
+  futureSubs.forEach(s => {
+    const slotDef = formation.slots.find(sl => sl.id === s.slot);
+    assert(!slotDef || slotDef.role !== 'GK',
+      `No future sub (minute=${s.minute}) targets the GK slot`);
+  });
+}
+
+// ─── Group 18: GK never appears in auto-sub schedule ────────────────────────
+console.log('\n=== 18. GK slot never appears in any auto-sub schedule ===');
+{
+  const gkSlotId = formation.slots.find(s => s.role === 'GK').id;
+
+  // H1 and H2 plans for several squad sizes
+  for (const n of [7, 8, 9, 10]) {
+    const players = makePlayers(n);
+    const present = players.filter(p => p.present);
+    const seed    = 42;
+
+    const h1Plan = buildHalfPlan(present, formation, {}, null, seed, 0);
+    h1Plan.subs.forEach(s => {
+      const slotDef = formation.slots.find(sl => sl.id === s.slot);
+      assert(!slotDef || slotDef.role !== 'GK',
+        `N=${n} H1 auto-sub at minute ${s.minute}: slot is not GK (got ${slotDef?.role})`);
+    });
+
+    const h1GameSec = {};
+    const sim = simulateFullGame(present, formation, seed, 0);
+    present.forEach(p => {
+      h1GameSec[p.id] = sim.intervals
+        .filter(iv => iv.pid === p.id && iv.half === 1)
+        .reduce((s, iv) => s + (iv.endMin - iv.startMin), 0) * 60;
+    });
+    const h1GkPid = Number(Object.entries(h1Plan.posMap).find(([, v]) => v === gkSlotId)?.[0]);
+    const h2Plan = buildHalfPlan(present, formation, h1GameSec, h1GkPid, seed + 1, 0);
+    h2Plan.subs.forEach(s => {
+      const slotDef = formation.slots.find(sl => sl.id === s.slot);
+      assert(!slotDef || slotDef.role !== 'GK',
+        `N=${n} H2 auto-sub at minute ${s.minute}: slot is not GK (got ${slotDef?.role})`);
+    });
+  }
+
+  // buildFutureSubs with a full roster (including GK among fieldNonGkIds would be wrong;
+  // confirm it never produces a GK slot even if slots object mistakenly includes one)
+  {
+    const players = makePlayers(8);
+    const present = players.filter(p => p.present);
+    const h1Plan  = buildHalfPlan(present, formation, {}, null, 42, 0);
+    const gkPid   = Number(Object.entries(h1Plan.posMap).find(([, v]) => v === gkSlotId)?.[0]);
+    const fieldNonGk = h1Plan.starters.filter(id => id !== gkPid);
+    const sessionSecs = {};
+    fieldNonGk.forEach(id => { sessionSecs[id] = 7 * 60; });
+    const fieldSlots  = {};
+    fieldNonGk.forEach(id => { fieldSlots[id] = h1Plan.posMap[id]; });
+    const futureSubs = buildFutureSubs(7, fieldNonGk, h1Plan.bench, fieldSlots, sessionSecs);
+    futureSubs.forEach(s => {
+      const slotDef = formation.slots.find(sl => sl.id === s.slot);
+      assert(!slotDef || slotDef.role !== 'GK',
+        `buildFutureSubs sub at minute ${s.minute}: slot is not GK`);
+    });
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
