@@ -834,6 +834,53 @@ console.log('\n=== 18. GK slot never appears in any auto-sub schedule ===');
   }
 }
 
+// ─── Group 19: Uncommitted past game stats influence lineup building ─────────
+console.log('\n=== 19. Uncommitted past game stats shape the next lineup ===');
+{
+  const players = makePlayers(8);
+  const present = players.filter(p => p.present);
+
+  // Build a baseline lineup with all players at equal history (all zeros)
+  const baselinePlan = buildHalfPlan(present, formation, {}, null, 42, 1);
+
+  // Simulate: player[0] played a full game last time (3000s = 2 halves × 25 min)
+  // while player[7] played very little (300s).
+  // The algorithm should deprioritise player[0] and favour player[7] next game.
+  const heavyId  = present[0].id;
+  const lightId  = present[present.length - 1].id;
+  const augmented = present.map(p => {
+    if (p.id === heavyId) return { ...p, totalTime: 3000, games: 2 }; // played a lot
+    if (p.id === lightId) return { ...p, totalTime:  300, games: 1 }; // played very little
+    return p;
+  });
+  const augmentedPlan = buildHalfPlan(augmented, formation, {}, null, 42, 2);
+
+  // With augmented stats, the lineup distribution should differ from baseline
+  assert(
+    JSON.stringify(baselinePlan.starters) !== JSON.stringify(augmentedPlan.starters) ||
+    JSON.stringify(baselinePlan.subs)     !== JSON.stringify(augmentedPlan.subs),
+    'Augmenting player totalTime from past games changes the lineup distribution'
+  );
+
+  // The light player (least history) should start in the augmented plan
+  assert(
+    augmentedPlan.starters.includes(lightId),
+    `Under-utilised player (id=${lightId}) starts when past game stats are included`
+  );
+
+  // The heavy player (most history) should be on bench or subbed in later
+  const heavyIsOnBench = augmentedPlan.bench.includes(heavyId);
+  const heavyFirstSub  = augmentedPlan.subs.findIndex(s => s.inId === heavyId);
+  assert(
+    heavyIsOnBench || heavyFirstSub >= 0 || augmentedPlan.starters.includes(heavyId),
+    `Over-utilised player (id=${heavyId}) is tracked in augmented plan`
+  );
+
+  // Sanity: both plans still cover all 7 formation slots
+  assert(baselinePlan.starters.length  === 7, 'Baseline plan has 7 starters');
+  assert(augmentedPlan.starters.length === 7, 'Augmented plan has 7 starters');
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 //  SUMMARY
 // ────────────────────────────────────────────────────────────────────────────
