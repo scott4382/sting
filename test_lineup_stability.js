@@ -26,8 +26,8 @@ const rawJs    = html.slice(srcStart, srcStart + 600_000)
   .replace(/\\'/g,  "'")
   .replace(/\\\\/g, '\\');
 
-// Keep only the pure-JS portion (lines 1-471, before JSX starts)
-const jsLines = rawJs.split('\n').slice(0, 471).join('\n');
+// Keep only the pure-JS portion (lines 1-490, before JSX starts)
+const jsLines = rawJs.split('\n').slice(0, 490).join('\n');
 const safeJs  = jsLines.replace(/const TEAM_LOGO_B64 = "[^"]*";/, 'const TEAM_LOGO_B64 = "";');
 
 // Evaluate with const→var so names land in the global context
@@ -230,7 +230,7 @@ function simulateFullGameFromPlan(savedPlan, manualH1Subs = [], manualH2Subs = [
  *   h1Subs / h2Subs from simulateFullGame
  */
 function buildSavedPlan(present, seed) {
-  const sim    = simulateFullGame(present, formation, seed, 0);
+  const sim    = simulateFullGame(present, formation, seed, seed + 1);
   const h1Plan = buildHalfPlan(present, formation, {}, null, seed, 0);
 
   // Replicate lines 1803-1809: derive H1 session seconds and H1 GK id
@@ -254,7 +254,7 @@ function buildSavedPlan(present, seed) {
  * (the app's own simulator — ground truth for what the plan promises).
  */
 function expectedPlayingTime(present, seed) {
-  const sim = simulateFullGame(present, formation, seed, 0);
+  const sim = simulateFullGame(present, formation, seed, seed + 1);
   // playerMins is in minutes; convert to seconds
   const secs = {};
   Object.entries(sim.playerMins).forEach(([pid, mins]) => {
@@ -317,7 +317,7 @@ console.log('\n=== 3. Substitution schedules match the approved plan ===');
   assertDeepEqual(savedPlan.h2Subs, savedPlan.h2Subs, 'H2 sub schedule is deterministic');
 
   // Verify sub schedule is consistent between plan builder and simulateFullGame
-  const sim = simulateFullGame(present, formation, seed, 0);
+  const sim = simulateFullGame(present, formation, seed, seed + 1);
   assertDeepEqual(savedPlan.h1Subs, sim.h1Subs, 'h1Subs from plan match simulateFullGame');
   assertDeepEqual(savedPlan.h2Subs, sim.h2Subs, 'h2Subs from plan match simulateFullGame');
 }
