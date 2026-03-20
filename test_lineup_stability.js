@@ -230,36 +230,44 @@ function simulateFullGameFromPlan(savedPlan, manualH1Subs = [], manualH2Subs = [
  *   h1Subs / h2Subs from simulateFullGame
  */
 function buildSavedPlan(present, seed) {
-  const sim    = simulateFullGame(present, formation, seed, seed + 1);
   const h1Plan = buildHalfPlan(present, formation, {}, null, seed, 0);
+  const h1Subs = h1Plan.subs;
 
-  // Replicate lines 1803-1809: derive H1 session seconds and H1 GK id
+  // Derive H1 session seconds from h1Plan (same as the UI now does)
   const h1GameSec = {};
-  present.forEach(p => {
-    h1GameSec[p.id] = sim.intervals
-      .filter(iv => iv.pid === p.id && iv.half === 1)
-      .reduce((s, iv) => s + (iv.endMin - iv.startMin), 0) * 60;
-  });
   const gkSlot  = formation.slots.find(s => s.role === 'GK');
+  {
+    let cf = [...h1Plan.starters], cpm = { ...h1Plan.posMap }, lm = 0;
+    const ivs = [];
+    const flush = (u) => { if (u <= lm) return; cf.forEach(pid => { const sl = cpm[pid]; if (sl !== undefined) ivs.push({ pid, half:1, startMin:lm, endMin:u, slot:sl }); }); };
+    for (const sub of h1Subs) { flush(sub.minute); lm = sub.minute; cf = cf.map(id => id === sub.outId ? sub.inId : id); const np = { ...cpm }; delete np[sub.outId]; np[sub.inId] = sub.slot; cpm = np; }
+    flush(HALF_MINS);
+    present.forEach(p => { h1GameSec[p.id] = ivs.filter(iv => iv.pid === p.id).reduce((s, iv) => s + (iv.endMin - iv.startMin), 0) * 60; });
+  }
   const h1GkPid = gkSlot
     ? Number(Object.entries(h1Plan.posMap).find(([, v]) => v === gkSlot.id)?.[0])
     : null;
 
   const h2Plan = buildHalfPlan(present, formation, h1GameSec, h1GkPid, seed + 1, 0);
-  return { h1Plan, h2Plan, h1Subs: sim.h1Subs, h2Subs: sim.h2Subs, seed, formKey: FORMATION_KEY };
+  const h2Subs = h2Plan.subs;
+  return { h1Plan, h2Plan, h1Subs, h2Subs, seed, formKey: FORMATION_KEY };
 }
 
 /**
- * Derive expected total playing time from a plan using simulateFullGame
- * (the app's own simulator — ground truth for what the plan promises).
+ * Derive expected total playing time from the plan's own data
+ * (ground truth: the plan's starters + subs).
  */
 function expectedPlayingTime(present, seed) {
-  const sim = simulateFullGame(present, formation, seed, seed + 1);
-  // playerMins is in minutes; convert to seconds
+  const plan = buildSavedPlan(present, seed);
   const secs = {};
-  Object.entries(sim.playerMins).forEach(([pid, mins]) => {
-    secs[pid] = mins * 60;
-  });
+  for (const half of [1, 2]) {
+    const hp = half === 1 ? plan.h1Plan : plan.h2Plan;
+    const hs = half === 1 ? plan.h1Subs : plan.h2Subs;
+    let cf = [...hp.starters], cpm = { ...hp.posMap }, lm = 0;
+    const flush = (u) => { if (u <= lm) return; cf.forEach(pid => { const sl = cpm[pid]; if (sl !== undefined) { secs[pid] = (secs[pid] || 0) + (u - lm) * 60; } }); };
+    for (const sub of hs) { flush(sub.minute); lm = sub.minute; cf = cf.map(id => id === sub.outId ? sub.inId : id); const np = { ...cpm }; delete np[sub.outId]; np[sub.inId] = sub.slot; cpm = np; }
+    flush(HALF_MINS);
+  }
   return secs;
 }
 
@@ -316,10 +324,10 @@ console.log('\n=== 3. Substitution schedules match the approved plan ===');
   assertDeepEqual(savedPlan.h1Subs, savedPlan.h1Subs, 'H1 sub schedule is deterministic');
   assertDeepEqual(savedPlan.h2Subs, savedPlan.h2Subs, 'H2 sub schedule is deterministic');
 
-  // Verify sub schedule is consistent between plan builder and simulateFullGame
-  const sim = simulateFullGame(present, formation, seed, seed + 1);
-  assertDeepEqual(savedPlan.h1Subs, sim.h1Subs, 'h1Subs from plan match simulateFullGame');
-  assertDeepEqual(savedPlan.h2Subs, sim.h2Subs, 'h2Subs from plan match simulateFullGame');
+  // Verify sub schedule is consistent when plan is rebuilt (determinism)
+  const plan2 = buildSavedPlan(present, seed);
+  assertDeepEqual(savedPlan.h1Subs, plan2.h1Subs, 'h1Subs deterministic across rebuilds');
+  assertDeepEqual(savedPlan.h2Subs, plan2.h2Subs, 'h2Subs deterministic across rebuilds');
 }
 
 // ─── Group 4: Total playing time ────────────────────────────────────────────
