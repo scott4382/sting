@@ -26,8 +26,8 @@ const rawJs    = html.slice(srcStart, srcStart + 600_000)
   .replace(/\\'/g,  "'")
   .replace(/\\\\/g, '\\');
 
-// Keep only the pure-JS portion (lines 1-490, before JSX starts)
-const jsLines = rawJs.split('\n').slice(0, 490).join('\n');
+// Keep only the pure-JS portion (lines 1-710, before JSX/React starts)
+const jsLines = rawJs.split('\n').slice(0, 710).join('\n');
 const safeJs  = jsLines.replace(/const TEAM_LOGO_B64 = "[^"]*";/, 'const TEAM_LOGO_B64 = "";');
 
 // Evaluate with const→var so names land in the global context
