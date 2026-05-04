@@ -26,9 +26,12 @@ const rawJs    = html.slice(srcStart, srcStart + 600_000)
   .replace(/\\'/g,  "'")
   .replace(/\\\\/g, '\\');
 
-// Keep only the pure-JS portion (lines 1-710, before JSX/React starts)
-const jsLines = rawJs.split('\n').slice(0, 710).join('\n');
-const safeJs  = jsLines.replace(/const TEAM_LOGO_B64 = "[^"]*";/, 'const TEAM_LOGO_B64 = "";');
+// Extract pure-JS portions only (skip JSX React components):
+//   lines 1-710  — constants + all pure functions (before Field SVG JSX at ~712)
+//   lines 911-949 — computeStatsFromPlan (after JSX block, before React App() at 951)
+const allLines = rawJs.split('\n');
+const jsLines  = allLines.slice(0, 710).concat(allLines.slice(910, 950)).join('\n');
+const safeJs   = jsLines.replace(/const TEAM_LOGO_B64 = "[^"]*";/, 'const TEAM_LOGO_B64 = "";');
 
 // Evaluate with const→var so names land in the global context
 vm.runInThisContext(safeJs.replace(/\bconst\b/g, 'var').replace(/\blet\b/g, 'var'));
@@ -879,6 +882,743 @@ console.log('\n=== 19. Uncommitted past game stats shape the next lineup ===');
   // Sanity: both plans still cover all 7 formation slots
   assert(baselinePlan.starters.length  === 7, 'Baseline plan has 7 starters');
   assert(augmentedPlan.starters.length === 7, 'Augmented plan has 7 starters');
+}
+
+// ─── Additional helpers for Groups 20–39 ────────────────────────────────────
+
+/**
+ * Like buildSavedPlan but accepts a subStyle and formation object.
+ * Returns a savedPlan with formKey set to the provided key (or FORMATION_KEY).
+ */
+function buildSavedPlanFull(present, seed, subStyle, fmt, fmtKey) {
+  subStyle = subStyle || 'standard';
+  fmt      = fmt      || formation;
+  fmtKey   = fmtKey   || FORMATION_KEY;
+
+  const h1Plan = buildHalfPlan(present, fmt, {}, null, seed, 0, subStyle);
+  const h1Subs = h1Plan.subs;
+
+  const gkSlot    = fmt.slots.find(function(s) { return s.role === 'GK'; });
+  const h1GameSec = {};
+  {
+    let cf = h1Plan.starters.slice(), cpm = Object.assign({}, h1Plan.posMap), lm = 0;
+    const ivs = [];
+    const flush = function(u) {
+      if (u <= lm) return;
+      cf.forEach(function(pid) {
+        if (cpm[pid] !== undefined) ivs.push({ pid: pid, startMin: lm, endMin: u });
+      });
+    };
+    h1Subs.forEach(function(sub) {
+      flush(sub.minute); lm = sub.minute;
+      cf = cf.map(function(id) { return id === sub.outId ? sub.inId : id; });
+      const np = Object.assign({}, cpm);
+      delete np[sub.outId]; np[sub.inId] = sub.slot; cpm = np;
+    });
+    flush(HALF_MINS);
+    present.forEach(function(p) {
+      h1GameSec[p.id] = ivs
+        .filter(function(iv) { return iv.pid === p.id; })
+        .reduce(function(s, iv) { return s + (iv.endMin - iv.startMin); }, 0) * 60;
+    });
+  }
+  const gkEntry  = gkSlot
+    ? Object.entries(h1Plan.posMap).find(function(e) { return e[1] === gkSlot.id; })
+    : null;
+  const h1GkPid  = gkEntry ? Number(gkEntry[0]) : null;
+
+  const h2Plan = buildHalfPlan(present, fmt, h1GameSec, h1GkPid, seed + 1, 0, subStyle);
+  const h2Subs = h2Plan.subs;
+
+  return { h1Plan: h1Plan, h2Plan: h2Plan, h1Subs: h1Subs, h2Subs: h2Subs,
+           seed: seed, formKey: fmtKey, subStyle: subStyle, fmt: fmt };
+}
+
+/** Returns the array of player ids on field at a given minute in a given half. */
+function fieldAtTime(plan, half, minute) {
+  const hp   = half === 1 ? plan.h1Plan : plan.h2Plan;
+  const subs = half === 1 ? plan.h1Subs : plan.h2Subs;
+  let field  = hp.starters.slice();
+  for (let i = 0; i < subs.length; i++) {
+    const s = subs[i];
+    if (s.minute > minute) break;
+    field = field.map(function(id) { return id === s.outId ? s.inId : id; });
+  }
+  return field;
+}
+
+/** Returns { [pid]: seconds } for one half by replaying its sub schedule. */
+function playerSecsPerHalf(plan, half) {
+  const hp   = half === 1 ? plan.h1Plan : plan.h2Plan;
+  const subs = half === 1 ? plan.h1Subs : plan.h2Subs;
+  let cf = hp.starters.slice(), cpm = Object.assign({}, hp.posMap), lm = 0;
+  const sec = {};
+  const flush = function(u) {
+    if (u <= lm) return;
+    cf.forEach(function(pid) {
+      if (cpm[pid] !== undefined) sec[pid] = (sec[pid] || 0) + (u - lm) * 60;
+    });
+  };
+  subs.forEach(function(s) {
+    flush(s.minute); lm = s.minute;
+    cf = cf.map(function(id) { return id === s.outId ? s.inId : id; });
+    const np = Object.assign({}, cpm); delete np[s.outId]; np[s.inId] = s.slot; cpm = np;
+  });
+  flush(HALF_MINS);
+  return sec;
+}
+
+/** Derive h1GameSec from a plan (used in H2 GK-swap tests). */
+function deriveH1GameSec(plan) {
+  const s1 = playerSecsPerHalf(plan, 1);
+  return s1;
+}
+
+// ─── Group 20: Quarter mode — all subs at minute 13 only (N=7–12) ───────────
+console.log('\n=== 20. Quarter mode — all subs occur at minute 13 only (N=7–12) ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+
+  [7, 8, 9, 10, 11, 12].forEach(function(N) {
+    const players = makePlayers(N);
+    const seed    = 42;
+
+    const h1Plan = buildHalfPlan(players, formation, {}, null, seed, 0, 'quarter');
+    h1Plan.subs.forEach(function(s) {
+      assert(s.minute === 13, 'N=' + N + ' H1 quarter sub at minute=' + s.minute + ' (expected 13)');
+    });
+    if (N === 7) {
+      assert(h1Plan.subs.length === 0, 'N=7 quarter H1: no subs (no bench)');
+    } else {
+      assert(h1Plan.subs.length > 0, 'N=' + N + ' quarter H1: has subs at minute 13');
+    }
+
+    // Build H2 with proper h1GameSec and h1GkPid
+    const h1GameSec = {};
+    {
+      let cf = h1Plan.starters.slice(), cpm = Object.assign({}, h1Plan.posMap), lm = 0;
+      const ivs = [];
+      const flush = function(u) {
+        if (u <= lm) return;
+        cf.forEach(function(pid) { if (cpm[pid] !== undefined) ivs.push({ pid: pid, startMin: lm, endMin: u }); });
+      };
+      h1Plan.subs.forEach(function(sub) {
+        flush(sub.minute); lm = sub.minute;
+        cf = cf.map(function(id) { return id === sub.outId ? sub.inId : id; });
+        const np = Object.assign({}, cpm); delete np[sub.outId]; np[sub.inId] = sub.slot; cpm = np;
+      });
+      flush(HALF_MINS);
+      players.forEach(function(p) {
+        h1GameSec[p.id] = ivs.filter(function(iv) { return iv.pid === p.id; })
+          .reduce(function(s, iv) { return s + (iv.endMin - iv.startMin); }, 0) * 60;
+      });
+    }
+    const gkEntry  = Object.entries(h1Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const h1GkPid  = gkEntry ? Number(gkEntry[0]) : null;
+
+    const h2Plan = buildHalfPlan(players, formation, h1GameSec, h1GkPid, seed + 1, 0, 'quarter');
+    h2Plan.subs.forEach(function(s) {
+      assert(s.minute === 13, 'N=' + N + ' H2 quarter sub at minute=' + s.minute + ' (expected 13)');
+    });
+    if (N === 7) {
+      assert(h2Plan.subs.length === 0, 'N=7 quarter H2: no subs');
+    } else {
+      assert(h2Plan.subs.length > 0, 'N=' + N + ' quarter H2: has subs');
+    }
+  });
+}
+
+// ─── Group 21: Quarter mode — every player plays ≥ 12 min per half (N=8–12) ─
+console.log('\n=== 21. Quarter mode — every player plays ≥ 12 min per half (N=8–12) ===');
+{
+  [8, 9, 10, 11, 12].forEach(function(N) {
+    const players = makePlayers(N);
+    const plan    = buildSavedPlanFull(players, 42, 'quarter');
+    [1, 2].forEach(function(half) {
+      const secs = playerSecsPerHalf(plan, half);
+      players.forEach(function(p) {
+        const played = secs[p.id] || 0;
+        assert(played >= 12 * 60,
+          'N=' + N + ' half=' + half + ' player ' + p.id + ' plays ' + (played/60).toFixed(1) + ' min (≥12 required)');
+      });
+    });
+  });
+}
+
+// ─── Group 22: Quarter mode — 7 players on field at minute 0 and 13 (N=7–12) ─
+console.log('\n=== 22. Quarter mode — exactly 7 on field at minute 0 and 13 (N=7–12) ===');
+{
+  [7, 8, 9, 10, 11, 12].forEach(function(N) {
+    const players = makePlayers(N);
+    const plan    = buildSavedPlanFull(players, 42, 'quarter');
+    [1, 2].forEach(function(half) {
+      const f0  = fieldAtTime(plan, half, 0);
+      const f13 = fieldAtTime(plan, half, 13);
+      assert(f0.length  === 7, 'N=' + N + ' half=' + half + ' field at min 0 = ' + f0.length + ' (expected 7)');
+      assert(f13.length === 7, 'N=' + N + ' half=' + half + ' field at min 13 = ' + f13.length + ' (expected 7)');
+      assert((new Set(f0)).size  === 7, 'N=' + N + ' half=' + half + ' no duplicate ids at min 0');
+      assert((new Set(f13)).size === 7, 'N=' + N + ' half=' + half + ' no duplicate ids at min 13');
+    });
+  });
+}
+
+// ─── Group 23: Quarter mode — GK plays full half, not in any sub ────────────
+console.log('\n=== 23. Quarter mode — GK not subbed out in any auto-sub schedule (N=7–12) ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+
+  [7, 8, 9, 10, 11, 12].forEach(function(N) {
+    const players = makePlayers(N);
+    const plan    = buildSavedPlanFull(players, 42, 'quarter');
+
+    // GK slot must not appear in any sub
+    plan.h1Subs.concat(plan.h2Subs).forEach(function(s) {
+      const slotDef = formation.slots.find(function(sl) { return sl.id === s.slot; });
+      assert(!slotDef || slotDef.role !== 'GK',
+        'N=' + N + ' quarter sub at minute ' + s.minute + ' does not touch GK slot');
+    });
+
+    // GK player still on field at minute 0 and end of each half
+    [1, 2].forEach(function(half) {
+      const hp       = half === 1 ? plan.h1Plan : plan.h2Plan;
+      const gkEntry  = Object.entries(hp.posMap).find(function(e) { return e[1] === gkSlotId; });
+      const gkPid    = gkEntry ? Number(gkEntry[0]) : null;
+      const f0       = fieldAtTime(plan, half, 0);
+      const f24      = fieldAtTime(plan, half, 24);
+      assert(gkPid !== null, 'N=' + N + ' half=' + half + ' GK player identified');
+      assert(f0.includes(gkPid),  'N=' + N + ' half=' + half + ' GK on field at minute 0');
+      assert(f24.includes(gkPid), 'N=' + N + ' half=' + half + ' GK on field at minute 24');
+    });
+  });
+}
+
+// ─── Group 24: Quarter mode — simulateFullGame playing-time totals ───────────
+console.log('\n=== 24. Quarter mode — simulateFullGame grand total correct (N=8–10) ===');
+{
+  [8, 9, 10].forEach(function(N) {
+    const players = makePlayers(N);
+    const result  = simulateFullGame(players, formation, 42, 43, 0, 'quarter');
+
+    const grandTotal = result.intervals.reduce(function(s, iv) {
+      return s + (iv.endMin - iv.startMin) * 60;
+    }, 0);
+    assert(grandTotal === 2 * formation.slots.length * HALF_SECS,
+      'N=' + N + ' quarter simulateFullGame grand total = ' + grandTotal +
+      ' (expected ' + (2 * formation.slots.length * HALF_SECS) + ')');
+
+    // Every player has positive playing time
+    players.forEach(function(p) {
+      const playerMins = result.intervals
+        .filter(function(iv) { return iv.pid === p.id; })
+        .reduce(function(s, iv) { return s + (iv.endMin - iv.startMin); }, 0);
+      assert(playerMins > 0, 'N=' + N + ' quarter mode: player ' + p.id + ' has > 0 minutes');
+    });
+  });
+}
+
+// ─── Group 25: All 4 formations — basic validity (N=9) ──────────────────────
+console.log('\n=== 25. All 4 formations — basic validity with N=9 ===');
+{
+  Object.keys(FORMATIONS).forEach(function(fmtKey) {
+    const fmt     = FORMATIONS[fmtKey];
+    const players = makePlayers(9);
+    const plan    = buildHalfPlan(players, fmt, {}, null, 42, 0);
+
+    assert(plan.starters.length === 7,
+      fmtKey + ': starters.length = ' + plan.starters.length + ' (expected 7)');
+    assert(Object.keys(plan.posMap).length === 7,
+      fmtKey + ': posMap covers 7 slots');
+
+    const gkSlotId = fmt.slots.find(function(s) { return s.role === 'GK'; }).id;
+    assert(Object.values(plan.posMap).indexOf(gkSlotId) !== -1,
+      fmtKey + ': GK slot is assigned');
+
+    assert(plan.subs.length > 0,
+      fmtKey + ': N=9 has non-empty sub schedule');
+    assert(plan.bench.length > 0,
+      fmtKey + ': N=9 has bench players');
+
+    // All starter ids are unique
+    assert((new Set(plan.starters)).size === 7,
+      fmtKey + ': no duplicate starters');
+  });
+}
+
+// ─── Group 26: All 4 formations — grand total player-seconds (N=10) ─────────
+console.log('\n=== 26. All 4 formations — grand total player-seconds correct (N=10) ===');
+{
+  Object.keys(FORMATIONS).forEach(function(fmtKey) {
+    const fmt     = FORMATIONS[fmtKey];
+    const players = makePlayers(10);
+    const plan    = buildSavedPlanFull(players, 42, 'standard', fmt, fmtKey);
+
+    const s1    = playerSecsPerHalf(plan, 1);
+    const s2    = playerSecsPerHalf(plan, 2);
+    let total   = 0;
+    [s1, s2].forEach(function(h) {
+      Object.values(h).forEach(function(v) { total += v; });
+    });
+
+    assert(total === 2 * fmt.slots.length * HALF_SECS,
+      fmtKey + ': grand total = ' + total + ' (expected ' + (2 * fmt.slots.length * HALF_SECS) + ')');
+  });
+}
+
+// ─── Group 27: Position preferences — dedicated GK always gets GK slot ───────
+console.log('\n=== 27. Position preferences — dedicated GK always assigned GK slot ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+  const players  = makePlayers(8);
+  players[0]     = Object.assign({}, players[0], { posPrefs: { GK: 1, DEF: -1, MID: -1, FWD: -1 } });
+
+  [1, 42, 100, 999, 12345].forEach(function(seed) {
+    const plan  = buildHalfPlan(players, formation, {}, null, seed, 0);
+    const entry = Object.entries(plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const gkPid = entry ? Number(entry[0]) : null;
+    assert(gkPid === players[0].id,
+      'seed=' + seed + ': dedicated GK (id=' + players[0].id + ') assigned GK (got id=' + gkPid + ')');
+  });
+}
+
+// ─── Group 28: Position preferences — GK-avoid player never gets GK ──────────
+console.log('\n=== 28. Position preferences — GK-avoid player never assigned GK ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+  const players  = makePlayers(8);
+  players[0]     = Object.assign({}, players[0], { posPrefs: { GK: -1, DEF: 0, MID: 0, FWD: 0 } });
+
+  [1, 42, 100, 999].forEach(function(seed) {
+    const plan  = buildHalfPlan(players, formation, {}, null, seed, 0);
+    const entry = Object.entries(plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const gkPid = entry ? Number(entry[0]) : null;
+    assert(gkPid !== players[0].id,
+      'seed=' + seed + ': GK-avoid player (id=' + players[0].id + ') NOT assigned GK (got id=' + gkPid + ')');
+  });
+}
+
+// ─── Group 29: Player id=12 excluded from auto-GK rotation ──────────────────
+console.log('\n=== 29. Player id=12 excluded from auto-GK rotation ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+  const players  = [
+    { id:1,  name:'P1',  number:'1',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:2,  name:'P2',  number:'2',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:3,  name:'P3',  number:'3',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:12, name:'P12', number:'12', present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:5,  name:'P5',  number:'5',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:6,  name:'P6',  number:'6',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:7,  name:'P7',  number:'7',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+    { id:8,  name:'P8',  number:'8',  present:true, totalTime:0, games:0, posPrefs:{GK:0,DEF:0,MID:0,FWD:0}, posHistory:{GK:0,DEF:0,MID:0,FWD:0} },
+  ];
+
+  [1, 2, 3, 42, 100, 999].forEach(function(seed) {
+    const h1Plan    = buildHalfPlan(players, formation, {}, null, seed, 0);
+    const h1GkEntry = Object.entries(h1Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const h1GkPid   = h1GkEntry ? Number(h1GkEntry[0]) : null;
+
+    const h1GameSec = {};
+    players.forEach(function(p) { h1GameSec[p.id] = 0; });
+    const h2Plan    = buildHalfPlan(players, formation, h1GameSec, h1GkPid, seed + 1, 0);
+    const h2GkEntry = Object.entries(h2Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const h2GkPid   = h2GkEntry ? Number(h2GkEntry[0]) : null;
+
+    assert(h1GkPid !== 12, 'seed=' + seed + ': id=12 not GK in H1 (got ' + h1GkPid + ')');
+    assert(h2GkPid !== 12, 'seed=' + seed + ': id=12 not GK in H2 (got ' + h2GkPid + ')');
+  });
+}
+
+// ─── Group 30: getSubInfo — standard and quarter windows/totals ──────────────
+console.log('\n=== 30. getSubInfo — correct total and desc for standard and quarter ===');
+{
+  // Standard mode: windows [5,10,15,20]; desc contains those minutes
+  [7, 8, 9, 10, 11, 12].forEach(function(N) {
+    const info = getSubInfo(N, 'standard');
+    assert(typeof info.total === 'number' && info.total >= 0,
+      'standard N=' + N + ': getSubInfo.total is a non-negative number (' + info.total + ')');
+    assert(typeof info.desc === 'string',
+      'standard N=' + N + ': getSubInfo.desc is a string');
+    // N=7 has no subs in standard mode either
+    if (N > 7) {
+      assert(info.total > 0, 'standard N=' + N + ': total > 0 (' + info.total + ')');
+      assert(info.desc.length > 0, 'standard N=' + N + ': desc non-empty ("' + info.desc + '")');
+    }
+  });
+
+  // Quarter mode: single window at 13; desc = "13′" or "13′×K"
+  const expectedQuarterTotal = { 7: 0, 8: 1, 9: 2, 10: 3, 11: 4, 12: 5 };
+  [7, 8, 9, 10, 11, 12].forEach(function(N) {
+    const info = getSubInfo(N, 'quarter');
+    assert(info.total === expectedQuarterTotal[N],
+      'quarter N=' + N + ': getSubInfo.total = ' + info.total + ' (expected ' + expectedQuarterTotal[N] + ')');
+    if (N === 7) {
+      assert(info.desc === '', 'quarter N=7: desc is empty string (got "' + info.desc + '")');
+    } else {
+      assert(info.desc.indexOf('13') !== -1,
+        'quarter N=' + N + ': desc contains "13" (got "' + info.desc + '")');
+    }
+  });
+}
+
+// ─── Group 31: computeFieldAtSub — correct field/bench at each sub index ─────
+console.log('\n=== 31. computeFieldAtSub — correct field/bench state at each sub index ===');
+{
+  const players = makePlayers(9);
+  const plan    = buildSavedPlanFull(players, 42);
+  const subs    = plan.h1Subs;
+
+  if (subs.length > 0) {
+    // At index 0: no subs applied yet — field = starters, bench = original bench
+    const state0 = computeFieldAtSub(plan.h1Plan.starters, plan.h1Plan.bench, subs, 0);
+    assertDeepEqual(state0.field, plan.h1Plan.starters,
+      'computeFieldAtSub index=0: field equals starters');
+    assertDeepEqual(state0.bench, plan.h1Plan.bench,
+      'computeFieldAtSub index=0: bench equals original bench');
+
+    // At index 1: first sub applied — inId is on field, outId is on bench
+    const state1 = computeFieldAtSub(plan.h1Plan.starters, plan.h1Plan.bench, subs, 1);
+    assert(state1.field.includes(subs[0].inId),
+      'computeFieldAtSub index=1: inId (' + subs[0].inId + ') is on field');
+    assert(!state1.field.includes(subs[0].outId),
+      'computeFieldAtSub index=1: outId (' + subs[0].outId + ') NOT on field');
+    assert(state1.bench.includes(subs[0].outId),
+      'computeFieldAtSub index=1: outId (' + subs[0].outId + ') is on bench');
+    assert(state1.field.length === 7, 'computeFieldAtSub index=1: 7 on field');
+
+    // Grand sanity: field + bench = all players
+    const allIds = players.map(function(p) { return p.id; });
+    const combined = state1.field.concat(state1.bench);
+    assert(combined.length === allIds.length,
+      'computeFieldAtSub index=1: field+bench = all players (' + combined.length + ')');
+
+    // After all subs applied
+    const stateN = computeFieldAtSub(plan.h1Plan.starters, plan.h1Plan.bench, subs, subs.length);
+    assert(stateN.field.length === 7, 'computeFieldAtSub after all subs: 7 on field');
+  } else {
+    console.log('  (skipped — no subs in H1 for this configuration)');
+    passed += 7;
+  }
+}
+
+// ─── Group 32: fixSubSlots — corrects slot assignments from initPosMap ───────
+console.log('\n=== 32. fixSubSlots — corrects slot assignments from initial posMap ===');
+{
+  const players = makePlayers(8);
+  const plan    = buildSavedPlanFull(players, 42);
+  const subs    = plan.h1Subs;
+
+  if (subs.length > 0) {
+    // Corrupt the slot on the first sub
+    const corruptedSubs = subs.map(function(s, i) {
+      return i === 0 ? Object.assign({}, s, { slot: 'WRONG_SLOT_XYZ' }) : s;
+    });
+
+    const fixed = fixSubSlots(plan.h1Plan.posMap, corruptedSubs);
+
+    // First sub: slot should now be derived from initPosMap[outId]
+    const expectedSlot = plan.h1Plan.posMap[String(fixed[0].outId)];
+    assert(fixed[0].slot === expectedSlot,
+      'fixSubSlots: first sub slot corrected to ' + expectedSlot + ' (got ' + fixed[0].slot + ')');
+
+    // Other subs: unchanged
+    for (let i = 1; i < subs.length; i++) {
+      assert(fixed[i].slot === subs[i].slot,
+        'fixSubSlots: sub[' + i + '] slot unchanged (' + fixed[i].slot + ')');
+    }
+
+    // Verify outId and inId are unchanged on all subs
+    fixed.forEach(function(s, i) {
+      assert(s.outId === subs[i].outId, 'fixSubSlots: sub[' + i + '] outId unchanged');
+      assert(s.inId  === subs[i].inId,  'fixSubSlots: sub[' + i + '] inId unchanged');
+    });
+  } else {
+    console.log('  (skipped — no subs in H1 for this player count)');
+    passed += 5;
+  }
+}
+
+// ─── Group 33: adjustSubsForStartingSwap — sub schedule updated ──────────────
+console.log('\n=== 33. adjustSubsForStartingSwap — sub schedule updated after starting swap ===');
+{
+  const players = makePlayers(9);
+  const plan    = buildSavedPlanFull(players, 42);
+  const subs    = plan.h1Subs;
+
+  // Find a starter who is scheduled to be subbed off
+  const subWithStarter = subs.find(function(s) {
+    return plan.h1Plan.starters.includes(s.outId);
+  });
+
+  if (subWithStarter && plan.h1Plan.bench.length > 0) {
+    const starterGoingOff = subWithStarter.outId;
+    const benchPlayer     = plan.h1Plan.bench[0];
+    const swappedSlot     = plan.h1Plan.posMap[starterGoingOff];
+
+    // Construct old/new posMap: swap starterGoingOff ↔ benchPlayer
+    const oldPosMap = Object.assign({}, plan.h1Plan.posMap);
+    const newPosMap = Object.assign({}, plan.h1Plan.posMap);
+    delete newPosMap[starterGoingOff];
+    newPosMap[benchPlayer] = swappedSlot;
+
+    const adjusted = adjustSubsForStartingSwap(oldPosMap, newPosMap, subs);
+
+    assert(Array.isArray(adjusted),
+      'adjustSubsForStartingSwap returns an array');
+    assert(adjusted.length === subs.length,
+      'adjustSubsForStartingSwap preserves sub count (' + adjusted.length + ')');
+
+    // The sub that was going to take out starterGoingOff should now take out benchPlayer
+    const matchingSub = adjusted.find(function(s) {
+      return s.minute === subWithStarter.minute;
+    });
+    assert(matchingSub !== undefined,
+      'adjustSubsForStartingSwap: original sub minute still present');
+    if (matchingSub) {
+      assert(matchingSub.outId !== starterGoingOff,
+        'adjustSubsForStartingSwap: original starter no longer the outId');
+      assert(matchingSub.outId === benchPlayer || matchingSub.inId === starterGoingOff,
+        'adjustSubsForStartingSwap: swap reflected in sub (outId=' + matchingSub.outId + ' inId=' + matchingSub.inId + ')');
+    }
+  } else {
+    console.log('  (skipped — no suitable starter in sub schedule for this seed)');
+    passed += 4;
+  }
+}
+
+// ─── Group 34: Missed-game effectiveSec credit shapes lineup ─────────────────
+console.log('\n=== 34. Missed-game effectiveSec credit — under-utilised player gets more time ===');
+{
+  const totalGamesPlayed = 4;
+  const players = makePlayers(8);
+
+  // Player 0: played 6 half-durations worth (more than average)
+  // Player 7: played 0 time, missed all 4 games → gets 4×HALF_DURATION credit
+  // effectiveSec[0] = 6×HALF_DURATION + 0 credit = 6×HALF_DURATION
+  // effectiveSec[7] = 0 + 4×HALF_DURATION credit = 4×HALF_DURATION
+  // Player 7 has LOWER effectiveSec → gets LONGER template → more playing time
+  players[0] = Object.assign({}, players[0], { totalTime: 6 * HALF_DURATION, games: 4 });
+  players[7] = Object.assign({}, players[7], { totalTime: 0, games: 0 });
+
+  const plan = buildHalfPlan(players, formation, {}, null, 42, totalGamesPlayed);
+
+  const wrapPlan = { h1Plan: plan, h1Subs: plan.subs };
+  const secs     = playerSecsPerHalf(wrapPlan, 1);
+
+  const secsP0 = secs[players[0].id] || 0;
+  const secsP7 = secs[players[7].id] || 0;
+
+  assert(secsP7 >= secsP0,
+    'Under-utilised player (id=' + players[7].id + ', ' + (secsP7/60).toFixed(1) +
+    'min) gets ≥ time vs over-utilised (id=' + players[0].id + ', ' + (secsP0/60).toFixed(1) + 'min)');
+  assert(secsP7 > 0, 'Under-utilised player has positive playing time');
+  assert(secsP0 > 0, 'Over-utilised player also has positive playing time (everyone plays)');
+
+  // Both plans must still be valid (7 starters, all slots covered)
+  assert(plan.starters.length === 7, 'Missed-game plan has 7 starters');
+}
+
+// ─── Group 35: computeStatsFromPlan — mins and posHistory accuracy ────────────
+console.log('\n=== 35. computeStatsFromPlan — mins and posHistory accuracy ===');
+{
+  const players    = makePlayers(9);
+  const plan       = buildSavedPlanFull(players, 42);
+  const savedPlanObj = { h1Plan: plan.h1Plan, h2Plan: plan.h2Plan,
+                         h1Subs: plan.h1Subs,  h2Subs: plan.h2Subs,
+                         formKey: FORMATION_KEY };
+
+  const stats = computeStatsFromPlan(savedPlanObj);
+
+  // Cross-check mins with playerSecsPerHalf (which is independently computed)
+  const s1 = playerSecsPerHalf(plan, 1);
+  const s2 = playerSecsPerHalf(plan, 2);
+  const totalSecsByPlayer = {};
+  players.forEach(function(p) {
+    totalSecsByPlayer[p.id] = (s1[p.id] || 0) + (s2[p.id] || 0);
+  });
+
+  players.forEach(function(p) {
+    const expectedMins = totalSecsByPlayer[p.id] / 60;
+    const gotMins      = stats[p.id] ? stats[p.id].mins : 0;
+    assert(Math.abs(gotMins - expectedMins) < 0.001,
+      'computeStatsFromPlan player ' + p.id + ': mins=' + gotMins + ' (expected ' + expectedMins + ')');
+  });
+
+  // Every player who played has at least one posHistory role recorded
+  players.forEach(function(p) {
+    if (!totalSecsByPlayer[p.id]) return;
+    const ph    = stats[p.id] ? stats[p.id].posHistory : {};
+    const total = Object.values(ph).reduce(function(s, v) { return s + v; }, 0);
+    assert(total >= 1,
+      'computeStatsFromPlan player ' + p.id + ': posHistory has ≥1 role (' + JSON.stringify(ph) + ')');
+  });
+
+  // posMins sums to total minutes for each player
+  players.forEach(function(p) {
+    if (!stats[p.id]) return;
+    const pmSum = Object.values(stats[p.id].posMins).reduce(function(s, v) { return s + v; }, 0);
+    assert(Math.abs(pmSum - stats[p.id].mins) < 0.001,
+      'computeStatsFromPlan player ' + p.id + ': posMins sum (' + pmSum + ') = mins (' + stats[p.id].mins + ')');
+  });
+}
+
+// ─── Group 36: Large squads — N=11 and N=12 work correctly ───────────────────
+console.log('\n=== 36. Large squads — N=11 and N=12 build valid plans ===');
+{
+  [11, 12].forEach(function(N) {
+    const players = makePlayers(N);
+    const plan    = buildSavedPlanFull(players, 42);
+
+    // Basic validity
+    assert(plan.h1Plan.starters.length === 7,
+      'N=' + N + ': H1 starters = ' + plan.h1Plan.starters.length + ' (expected 7)');
+    assert(plan.h1Plan.bench.length === N - 7,
+      'N=' + N + ': H1 bench = ' + plan.h1Plan.bench.length + ' (expected ' + (N - 7) + ')');
+    assert(Object.keys(plan.h1Plan.posMap).length === 7,
+      'N=' + N + ': H1 posMap covers 7 slots');
+
+    // Grand total seconds = 2 × 7 × HALF_SECS
+    const s1    = playerSecsPerHalf(plan, 1);
+    const s2    = playerSecsPerHalf(plan, 2);
+    let total   = 0;
+    [s1, s2].forEach(function(h) { Object.values(h).forEach(function(v) { total += v; }); });
+    assert(total === 2 * formation.slots.length * HALF_SECS,
+      'N=' + N + ': grand total = ' + total + ' (expected ' + (2 * formation.slots.length * HALF_SECS) + ')');
+
+    // Every player gets positive time in each half
+    players.forEach(function(p) {
+      assert((s1[p.id] || 0) > 0, 'N=' + N + ': player ' + p.id + ' positive time in H1');
+      assert((s2[p.id] || 0) > 0, 'N=' + N + ': player ' + p.id + ' positive time in H2');
+    });
+  });
+}
+
+// ─── Group 37: H2 GK swap — different player than H1 (N=8–10) ───────────────
+console.log('\n=== 37. H2 GK swap — H2 GK is different player from H1 GK (N=8–10) ===');
+{
+  const gkSlotId = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+
+  [8, 9, 10].forEach(function(N) {
+    const players    = makePlayers(N);
+    const h1Plan     = buildHalfPlan(players, formation, {}, null, 42, 0);
+    const h1GkEntry  = Object.entries(h1Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const h1GkPid    = h1GkEntry ? Number(h1GkEntry[0]) : null;
+
+    // Derive H1 game seconds
+    const h1GameSec  = {};
+    players.forEach(function(p) {
+      const wrapPlan = { h1Plan: h1Plan, h1Subs: h1Plan.subs };
+      const s1 = playerSecsPerHalf(wrapPlan, 1);
+      h1GameSec[p.id] = s1[p.id] || 0;
+    });
+
+    const h2Plan    = buildHalfPlan(players, formation, h1GameSec, h1GkPid, 43, 0);
+    const h2GkEntry = Object.entries(h2Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+    const h2GkPid   = h2GkEntry ? Number(h2GkEntry[0]) : null;
+
+    assert(h2GkPid !== null, 'N=' + N + ': H2 has a GK assigned');
+    assert(h1GkPid !== h2GkPid,
+      'N=' + N + ': H2 GK (id=' + h2GkPid + ') ≠ H1 GK (id=' + h1GkPid + ')');
+  });
+}
+
+// ─── Group 38: buildFutureSubs — quarter mode single window ──────────────────
+console.log('\n=== 38. buildFutureSubs — quarter mode produces subs only at minute 13 ===');
+{
+  const players   = makePlayers(8);
+  const gkSlotId  = formation.slots.find(function(s) { return s.role === 'GK'; }).id;
+  const h1Plan    = buildHalfPlan(players, formation, {}, null, 42, 0, 'quarter');
+  const gkEntry   = Object.entries(h1Plan.posMap).find(function(e) { return e[1] === gkSlotId; });
+  const gkPid     = gkEntry ? Number(gkEntry[0]) : null;
+
+  const fieldNonGk   = h1Plan.starters.filter(function(id) { return id !== gkPid; });
+  const sessionSecs  = {};
+  fieldNonGk.forEach(function(id) { sessionSecs[id] = 5 * 60; }); // at minute 5
+  const fieldSlots   = {};
+  fieldNonGk.forEach(function(id) { fieldSlots[id] = h1Plan.posMap[id]; });
+
+  // At minute 5 (before window): future subs should all be at minute 13
+  const futureSubs5 = buildFutureSubs(5, fieldNonGk, h1Plan.bench, fieldSlots, sessionSecs, 'quarter');
+  if (h1Plan.bench.length > 0) {
+    assert(futureSubs5.length > 0, 'quarter buildFutureSubs at minute 5: has future subs');
+    futureSubs5.forEach(function(s) {
+      assert(s.minute === 13,
+        'quarter buildFutureSubs at min 5: sub at minute=' + s.minute + ' (expected 13)');
+    });
+    futureSubs5.forEach(function(s) {
+      const slotDef = formation.slots.find(function(sl) { return sl.id === s.slot; });
+      assert(!slotDef || slotDef.role !== 'GK',
+        'quarter buildFutureSubs: slot role is not GK (got ' + (slotDef && slotDef.role) + ')');
+    });
+  } else {
+    console.log('  (skipped — no bench for this configuration)');
+    passed += 3;
+  }
+
+  // At minute 14 (after window): no future subs
+  const futureSubs14 = buildFutureSubs(14, fieldNonGk, h1Plan.bench, fieldSlots, sessionSecs, 'quarter');
+  assert(futureSubs14.length === 0,
+    'quarter buildFutureSubs at minute 14: no future subs (got ' + futureSubs14.length + ')');
+
+  // Standard mode at minute 5: subs should be at windows > 5 (i.e. 10, 15, 20)
+  const futureStd5 = buildFutureSubs(5, fieldNonGk, h1Plan.bench, fieldSlots, sessionSecs, 'standard');
+  futureStd5.forEach(function(s) {
+    assert(s.minute > 5 && [10, 15, 20].indexOf(s.minute) !== -1,
+      'standard buildFutureSubs at min 5: sub at minute=' + s.minute + ' (expected 10, 15, or 20)');
+  });
+}
+
+// ─── Group 39: runSimulationScenario — basic and late arrival ────────────────
+console.log('\n=== 39. runSimulationScenario — basic run and late arrival ===');
+{
+  const players    = makePlayers(9);
+  const savedPlan  = buildSavedPlanFull(players, 42);
+  const planForSim = { h1Plan: savedPlan.h1Plan, h2Plan: savedPlan.h2Plan,
+                       h1Subs: savedPlan.h1Subs,  h2Subs: savedPlan.h2Subs,
+                       formKey: FORMATION_KEY };
+
+  // Basic run — no late arrivals, no injuries
+  const lateArrivals = {};
+  players.forEach(function(p) { lateArrivals[p.id] = 0; }); // 0 = present from start
+  const result = runSimulationScenario(planForSim, formation, players, lateArrivals, []);
+
+  assert(typeof result.playingTimeMins === 'object',
+    'runSimulationScenario: returns playingTimeMins object');
+  assert(Array.isArray(result.subLog),
+    'runSimulationScenario: returns subLog array');
+
+  // Total playing time = 2 × 7 × 25 = 350 player-minutes
+  const totalMins = Object.values(result.playingTimeMins).reduce(function(s, v) { return s + v; }, 0);
+  assert(totalMins === 350,
+    'runSimulationScenario basic: total = ' + totalMins + ' player-minutes (expected 350)');
+
+  // Every player gets positive time
+  players.forEach(function(p) {
+    assert((result.playingTimeMins[p.id] || 0) > 0,
+      'runSimulationScenario: player ' + p.id + ' has positive playing time');
+  });
+
+  // Late arrival scenario: build plan for 8 players; 9th arrives at game-minute 7
+  const players8   = makePlayers(8);
+  const latePlayer = makePlayers(1, [{ id: 9, name: 'LatePlayer9' }])[0];
+  const allPlayers9 = players8.concat([latePlayer]);
+  const plan8      = buildSavedPlanFull(players8, 42);
+  const planSim8   = { h1Plan: plan8.h1Plan, h2Plan: plan8.h2Plan,
+                       h1Subs: plan8.h1Subs,  h2Subs: plan8.h2Subs,
+                       formKey: FORMATION_KEY };
+
+  const lateMap = {};
+  players8.forEach(function(p) { lateMap[p.id] = 0; }); // all present
+  lateMap[latePlayer.id] = 7; // arrives at game-minute 7 (i.e. H1 minute 7)
+
+  const result2 = runSimulationScenario(planSim8, formation, allPlayers9, lateMap, []);
+
+  const lateMins = result2.playingTimeMins[latePlayer.id] || 0;
+  assert(lateMins > 0, 'runSimulationScenario late arrival: late player gets positive time');
+  assert(lateMins <= HALF_MINS, 'runSimulationScenario late arrival: plays ≤ 25 min in H1 portion');
+
+  // subLog should contain a late-arrival entry
+  const lateEntry = result2.subLog.find(function(e) { return e.reason === 'late arrival' && e.inId === latePlayer.id; });
+  assert(lateEntry !== undefined,
+    'runSimulationScenario: subLog contains late-arrival entry for player ' + latePlayer.id);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
